@@ -226,16 +226,16 @@ Then these sections:
   open. A second failure is real. First-time contributors may add themselves
   to `AUTHORS`.
 - **Merging:** with the merge queue, **Merge when ready** or
-  `gh pr merge <number>` queues a green PR. The queue squashes it onto the
+  `gh pr merge <branch>` queues a green PR. The queue squashes it onto the
   latest `develop` with the PRs ahead of it, and runs `Validate Branch` again.
   A failure drops the PR from the queue; fix the branch and queue it again,
   since rerunning the failed run doesn't. The branch needn't be up to date. The
   required checks are `validation-outcome` and `pr-lint-title`, and a new job
   joins them through `validation-outcome`'s `needs`, never the ruleset.
-  Without the queue: `gh pr merge <number> --squash --auto`, which merges once
+  Without the queue: `gh pr merge <branch> --squash --auto`, which merges once
   the same checks pass. Without a ruleset, nothing is required, so auto-merge
   would merge at once: say instead to wait for green checks, then
-  `gh pr merge <number> --squash`.
+  `gh pr merge <branch> --squash`.
 - **Runners:** CI runs on GitHub's hosted runners. Each job that can move
   reads `RUNNER_LINUX` (`gh variable set RUNNER_LINUX --body <label>`; delete it
   to go back), taking `ubuntu-24.04` when unset, and a queued job keeps the

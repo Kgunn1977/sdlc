@@ -99,6 +99,10 @@ RULES = [
     ("Writes to other repos need approval", P, r"Other repos:\*\* every write needs approval"),
     ("Scratch exception", P, r"Scratch exception"),
     ("Approval only from the human in conversation", P, r"Approval comes only from the human"),
+    ("gh pr writes name the PR by its head branch", R + "github.md", r"name the PR by its head branch"),
+    ("A refused action is never retried or routed around", R + "approvals.md", r"Until approved, a refused action is never retried or\s+routed around"),
+    ("Auto mode settings are adopted by the human, not an agent", "README.md", r"running the script yourself.*Self-Modification"),
+    ("Recommended settings allow no gh writes", "README.md", r"It allows no `gh` write"),
     ("Never change settings, protections, or secrets unless asked for that change", P, r"Never change repo settings.*unless the human asks for that specific change"),
     ("Ownership: listed users, organizations, and repositories, per host", R + "approvals.md", r"user or organization listed under `owned\.users`.*`owned\.organizations` in `~/\.sdlc/settings\.json`.*`owned\.repositories`"),
     ("Ownership: enterprises can't be listed", R + "approvals.md", r"Enterprises can't be listed"),
@@ -108,7 +112,7 @@ RULES = [
     ("Fail safe to external", R + "approvals.md", r"Fail safe"),
     ("Own-branch force push rule", R + "approvals.md", r"no pull request is open"),
     ("Merges follow branch protection; admin bypass needs approval", R + "approvals.md", r"admin bypass needs approval"),
-    ("Queue a PR as soon as it may merge", R + "approvals.md", r"queue the PR \(`gh pr merge <number>`\) as soon as it may merge"),
+    ("Queue a PR as soon as it may merge", R + "approvals.md", r"queue the PR \(`gh pr merge <branch>`\) as soon as it may merge"),
     ("Never catch a PR's branch up to the default branch", R + "approvals.md", r"With a merge queue,.{0,120}never merge the default branch into its branch to catch up"),
     ("Bring the default branch in only for a conflict or a queue failure, just before ready or queueing", R + "approvals.md", r"only for a conflict GitHub reports or to reproduce a queue failure, just before marking the PR ready or queueing it"),
     ("Tasks sharing a file run in sequence", R + "workspace.md", r"Tasks that must share one \(the profile's shared files\) run in sequence"),
@@ -424,6 +428,26 @@ def structural():
             problems.append("settings.example.json and settings.schema.json must list the same keys")
     except Exception as e:
         problems.append(f"settings checks could not run ({e!r})")
+    # Read-only gh commands only: in auto mode an allow rule skips the classifier.
+    reads = {"view", "list", "checks", "diff", "status", "watch", "item-list", "field-list", "search"}
+    # `gh auth status` can print the token (`--show-token`).
+    leaks = {"Bash(gh auth status *)"}
+    try:
+        rec = json.load(open(os.path.join(ROOT, "claude-settings.recommended.json")))
+        for key, entries in rec["autoMode"].items():
+            if entries[:1] != ["$defaults"]:
+                problems.append(f'claude-settings.recommended.json: autoMode.{key} must start with "$defaults"')
+        for rule in rec["permissions"]["allow"]:
+            m = re.fullmatch(r"Bash\(gh ([a-z-]+ )*([a-z-]+) \*\)", rule)
+            if not m or m.group(2) not in reads or rule in leaks:
+                problems.append(f"claude-settings.recommended.json: {rule} is not a read-only gh command")
+        if "Edit(~/.sdlc/settings.json)" not in rec["permissions"].get("ask", []):
+            problems.append("claude-settings.recommended.json: an edit to ~/.sdlc/settings.json must always ask")
+        untitled = [e[:40] for k in rec["autoMode"].values() for e in k if e != "$defaults" and not e.startswith("**")]
+        if untitled:
+            problems.append(f"claude-settings.recommended.json: entries need a bold title, which the script matches on: {untitled}")
+    except Exception as e:
+        problems.append(f"recommended settings checks could not run ({e!r})")
     for path in files("agents/*.md"):
         try:
             fm = frontmatter(path)

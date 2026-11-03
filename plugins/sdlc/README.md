@@ -30,12 +30,15 @@ the smallest team that can do the job.
    workstream leads need 3 (the default). Conductors check this and
    `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` at job start and tell you if either is
    too low.
-6. Starting a project, or bringing an existing repository or GitHub Project in
+6. Running in auto mode? Adopt the recommended auto mode settings
+   ([Auto mode](#auto-mode)), so the classifier doesn't refuse the routine
+   GitHub writes of your own tickets.
+7. Starting a project, or bringing an existing repository or GitHub Project in
    line? Run `/sdlc:setup`. It asks what you want to build and how, recommends
    an answer to every setup question, and then creates or adjusts the
    repository, its settings and protections, and a Project board with its
    fields, views, and workflows. A team you choose then seeds the backlog.
-7. Ask for work: "Engineer, fix #57", "QA, find bugs", "CEO, work tickets #12
+8. Ask for work: "Engineer, fix #57", "QA, find bugs", "CEO, work tickets #12
    to #18 and QA the app". A role invoked without a task asks what to work on.
 
 ## Settings
@@ -70,6 +73,87 @@ version so keys added since are recognized. A filled-in file:
 
 If the file doesn't parse, nothing counts as yours until you fix it, and the
 roles say so.
+
+## Auto mode
+
+In Claude Code's auto mode a classifier judges each action, and a job's
+workers inherit that mode. Its built-in rules **Unrequested Commit in a
+Connected App** and **External System Writes** clear a GitHub write only when
+the user's own message names it, and a worker's transcript never shows your
+messages. So routine ticket writes (`gh pr ready` after a draft-first review,
+`gh pr edit`, issue comments) are refused and come back as critical inbox
+approvals, and approving one in the conversation doesn't clear it for the
+worker. `claude-settings.recommended.json` is a recommended part of
+`~/.claude/settings.json` that authorizes those writes in your own repositories,
+within limits, and adds guardrails of its own:
+
+- **Environment:** the agent org, its job files and branch conventions; your
+  accounts and their public repositories, both generated from
+  `~/.sdlc/settings.json`; what Repository notes are; and that branches from
+  forks, outside contributors and bots stay untrusted.
+- **Allow:** one exception for the ticket workflow's writes on the job's own PRs
+  and issues (create, edit, mark ready, comment, resolve a thread it replied to
+  with the fix, set fields, rerun the job's failed CI jobs, and queue a PR where a
+  merge queue or required checks gate the default branch), and one for removing
+  an accepted task's scratch folders and worktrees. The classifier sees
+  messages and commands but never their output, so a PR counts as the job's
+  only when the transcript shows it: created there, named by you or in a launch
+  prompt, or named by its job branch. Release and bot PRs, `--admin`,
+  approving reviews, and closing issues other than through a merged PR stay
+  excluded.
+- **Soft deny:** five rules the defaults don't have: a direct push to a default
+  branch, a force-push to a branch that isn't the job's, merging or queueing a
+  release or bot PR, repository administration, and a new dependency or tool.
+  Each says what clears it.
+- **Permissions:** read-only `gh` commands; `~/.sdlc` and `/tmp/sdlc` as
+  additional directories, so agents write job files without prompts; and an
+  `ask` rule so an edit to `~/.sdlc/settings.json`, which says what you own,
+  always asks you. It allows no `gh` write: in auto mode a matching
+  allow rule is resolved before the classifier runs, so `Bash(gh pr merge *)`
+  or `Bash(gh api *)` would skip every guard above.
+
+Every `autoMode` list in the file keeps `"$defaults"`, so the built-in rules
+stay in force.
+Claude Code reads `autoMode` only from your user settings, managed settings, or
+`--settings`, never from a project's `.claude/settings.json`, so these are
+per user.
+
+**Adopt them** by running the script yourself, in a terminal or with `!` in a
+session: auto mode treats an agent editing your Claude Code settings as
+Self-Modification, which a go-ahead in the conversation doesn't reliably clear. The marketplace clone that
+`/plugin marketplace add` made has it:
+
+```bash
+python3 ~/.claude/plugins/marketplaces/KnobanLabs/scripts/automode-settings.py merge          # shows what would change
+python3 ~/.claude/plugins/marketplaces/KnobanLabs/scripts/automode-settings.py merge --write  # saves it, after a dated backup
+```
+
+It needs Python 3 and an authenticated `gh`. It changes only its own entries,
+matched by their bold titles, and keeps every other key and entry. It warns
+about an allowed `gh` write rule and about an `autoMode` list without
+`"$defaults"`, but changes neither. Run `merge` again after an update to bring its
+entries up to date; it replaces them, so keep changes of your own in separate
+entries.
+
+**Repository notes** state what only you know: for each repository whose
+default branch a merge queue or ruleset with required checks gates, add an
+entry to `autoMode.environment` yourself, such as:
+
+```text
+**Repository notes, <owner>/<repo>**: <branch> is the default branch, gated by <a merge queue | a ruleset> with required checks (<check names>); it requires <no | N> approving reviews. Merging to <branch> deploys <nothing | <target>>. Production deploys are: <merging the release PR, `gh release create`, pushing a `v*` tag, `gh workflow run` on <workflow>>.
+```
+
+Without notes a repository gets no merge waiver, so queueing its PRs still asks.
+
+**Add an organization** by listing it under `owned` in `~/.sdlc/settings.json`
+and running `automode-settings.py sync --write`, which rewrites only the owned
+accounts and their public repositories. Run it again after creating a repository
+or making one public.
+
+**Check them** with `claude auto-mode config` (the rules in effect, defaults
+included), `claude auto-mode critique` (a review of your own rules), and
+`automode-settings.py list` (your owned accounts, and whether each recommended
+entry is current, outdated, or missing).
 
 ## The org
 

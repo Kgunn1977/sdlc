@@ -63,7 +63,7 @@ this job, nobody else committed to it, and no pull request is open against it.
 - Otherwise a merge may precede acceptance once required checks pass (with no
   CI: the profile's full test, lint, type, and build commands) and
   `sdlc:expert-review` converged.
-- With a merge queue, queue the PR (`gh pr merge <number>`) as soon as it may
+- With a merge queue, queue the PR (`gh pr merge <branch>`) as soon as it may
   merge, and never merge the default branch into its branch to catch up: the
   queue tests it on the latest one. Bring it in only for a conflict GitHub
   reports or to reproduce a queue failure, just before marking the PR ready or
@@ -80,7 +80,9 @@ this job, nobody else committed to it, and no pull request is open against it.
 A worker stops the action and escalates; the conductor records a critical inbox
 entry with the approval request template, which the human answers at the next
 inbox check. Approval is per action; bundled requests list each action. Continue
-other work while waiting.
+other work while waiting. Until approved, a refused action is never retried or
+routed around; the entry quotes the refusal (for auto mode, citing the
+README's Auto mode settings).
 
 For a new dependency or tool, give its name and version, its license and
 whether IP Counsel found it compatible, what it's for, the alternatives weighed
