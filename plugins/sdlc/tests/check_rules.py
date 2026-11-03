@@ -8,6 +8,7 @@ Exit code 0 means every check passed.
 When a decision changes, update its entry here in the same change.
 """
 import glob
+import json
 import os
 import re
 import sys
@@ -46,7 +47,7 @@ RULES = [
     ("CEO: single task goes straight to its worker", "skills/ceo/SKILL.md", r"a single task goes straight to its worker"),
     ("CTO routing is conditional", "skills/cto/SKILL.md", r"only when the\s+work materially touches the topic"),
     ("CTO: QA only when it changes the outcome", "skills/cto/SKILL.md", r"when the delivery\s+changes user-facing behavior or its criteria aren't proven"),
-    ("Span of control: 8 tasks per conductor per run", R + "conducting.md", r"at most \*\*8\*\* tasks per run directly\s+\(`- span:`"),
+    ("Span of control: 8 tasks per conductor per run", R + "conducting.md", r"at most \*\*8\*\* tasks per run directly\s+\(`span` in `~/\.sdlc/settings\.json`\)"),
     ("Span counts tasks over the run, not concurrency", R + "conducting.md", r"counting every task you brief over the\s+run"),
     ("Alert the human when spawn depth is too low", R + "conducting.md", r"CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` \(default 3; the plan needs 2.*3 with workstream leads\)"),
     ("Alert the human when concurrent subagents are too low", R + "conducting.md", r"CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` \(default 20; the plan needs"),
@@ -99,11 +100,11 @@ RULES = [
     ("Scratch exception", P, r"Scratch exception"),
     ("Approval only from the human in conversation", P, r"Approval comes only from the human"),
     ("Never change settings, protections, or secrets unless asked for that change", P, r"Never change repo settings.*unless the human asks for that specific change"),
-    ("Ownership: listed users, organizations, and repositories, per host", R + "approvals.md", r"user or organization listed in `~/\.sdlc/config\.md`.*listed under Repositories"),
+    ("Ownership: listed users, organizations, and repositories, per host", R + "approvals.md", r"user or organization listed under `owned\.users`.*`owned\.organizations` in `~/\.sdlc/settings\.json`.*`owned\.repositories`"),
     ("Ownership: enterprises can't be listed", R + "approvals.md", r"Enterprises can't be listed"),
     ("Renamed or transferred listed repos become external", R + "approvals.md", r"nameWithOwner.*no\s+longer matches the entry"),
     ("Ownership judged by current owner after renames and transfers", R + "approvals.md", r"follows renames and transfers"),
-    ("Config template: users, organizations, and repositories; no enterprises", "config.example.md", r"### Users.*### Organizations.*### Repositories"),
+    ("Settings template: owned users, organizations, and repositories", "settings.example.json", r'"owned": \{ "users": \[\], "organizations": \[\], "repositories": \[\]'),
     ("Fail safe to external", R + "approvals.md", r"Fail safe"),
     ("Own-branch force push rule", R + "approvals.md", r"no pull request is open"),
     ("Merges follow branch protection; admin bypass needs approval", R + "approvals.md", r"admin bypass needs approval"),
@@ -137,10 +138,12 @@ RULES = [
     ("Briefs carry the ticket's Project and status", R + "templates.md", r"Project \(owner, number\) and current status"),
     ("Conductors send multi-role tickets to the PM to split", R + "conducting.md", r"split into sub-issues"),
     ("Approvals summary covers new dependencies and tools", P, r"New dependencies and tools\*\* always need approval"),
-    ("Config summary lists the inbox threshold", P, r"inbox threshold"),
+    ("Settings summary lists every key", P, r"`owned`.*`inbox_threshold`, `jurisdictions`, `span`, `standing_orders`"),
+    ("Unparseable settings own nothing", R + "approvals.md", r"settings file that doesn't parse, means external"),
     ("README documents tickets and sub-issues", "README.md", r"sub-issues, one per role"),
     ("README quick start covers the project scope", "README.md", r"gh auth refresh -s project"),
-    ("Config template: dependencies and tools need approval", "config.example.md", r"new dependencies\s+and tools"),
+    ("Settings docs: dependencies and tools need approval", "README.md", r"\| `owned` \|.*except dangerous operations and new dependencies and tools"),
+    ("Settings docs: enterprises can't be listed", "README.md", r"\| `owned` \|.*Enterprises can't be listed"),
     # Review gate
     ("Every repo change passes expert-review", P, r"Every repo change"),
     ("Authors run their own expert-review", P, r"Whoever makes the change runs it"),
@@ -195,9 +198,9 @@ RULES = [
     ("CTO can lead a workstream", "skills/cto/SKILL.md", r"Lead a workstream"),
     ("CMO can lead a workstream", "skills/cmo/SKILL.md", r"lead a\s+workstream"),
     ("CEO dispatches workstream leads itself", "skills/ceo/SKILL.md", r"dispatch a workstream\s+lead for each yourself"),
-    ("Config template: span of control", "config.example.md", r"- span: 8"),
+    ("Settings template: span of control", "settings.example.json", r'"span": 8'),
     ("Inbox command is human-only", "skills/inbox/SKILL.md", r"disable-model-invocation: true"),
-    ("Inbox threshold in config", "config.example.md", r"inbox_threshold: high"),
+    ("Settings template: inbox threshold", "settings.example.json", r'"inbox_threshold": "high"'),
     # Management conductors
     ("Delegate unless absolutely trivial", R + "conducting.md", r"unless it is absolutely trivial"),
     ("Reject choices made to avoid an approval", R + "conducting.md", r"made to avoid an approval"),
@@ -275,7 +278,7 @@ RULES = [
     ("CLO can lead a workstream", P, r"\(CTO, CMO, CLO, or CPO\)"),
     ("Legal exposure never goes public", P, r"Security issues and legal exposure never go public"),
     ("Legal: not legal advice", R + "legal.md", r"Legal analysis, not legal advice"),
-    ("Legal: jurisdictions from config, else a question", R + "legal.md", r"`- jurisdictions:`.*raise\s+it as a high inbox question"),
+    ("Legal: jurisdictions from config, else a question", R + "legal.md", r"`jurisdictions` in `~/\.sdlc/settings\.json`.*raise\s+it as a high inbox question"),
     ("Legal: primary sources with dates; never from memory", R + "legal.md", r"primary sources first.*never rely on\s+memory"),
     ("Legal: may block on high findings; risk acceptance is the human's", R + "legal.md", r"may block a delivery with an unresolved high\s+finding.*critical inbox question"),
     ("Legal: findings private, public tickets neutral", R + "legal.md", r"never a public issue, PR, or comment"),
@@ -295,7 +298,7 @@ RULES = [
     ("CTO routes legal work", "skills/cto/SKILL.md", r"IP Counsel; personal data\s+→ Privacy Counsel"),
     ("CMO routes claims to CLO", "skills/cmo/SKILL.md", r"get a CLO review"),
     ("Community routes legal notices privately", "skills/community/SKILL.md", r"legal notices such as\s+takedowns"),
-    ("Config template: jurisdictions", "config.example.md", r"- jurisdictions:"),
+    ("Settings template: jurisdictions", "settings.example.json", r'"jurisdictions": \[\]'),
     ("Repo profile: legal and compliance section", R + "repo-profile.md", r"\*\*Legal and compliance:\*\*"),
     # Stop, resume, transfer
     ("stop is human-only", "skills/stop/SKILL.md", r"disable-model-invocation: true"),
@@ -323,7 +326,7 @@ RULES = [
     ("CEO recommends setup for a project with none, except in setup's own job", "skills/ceo/SKILL.md", r"recommend\s+`/sdlc:setup`, which they run themselves\. A job `/sdlc:setup` started has had\s+its fit check"),
     ("setup resumes an unfinished setup, and pending steps alone", "skills/setup/SKILL.md", r"look for an unfinished setup.*resumes by applying those alone.*`done` only when no step is\s+`pending`"),
     ("setup may write a project's files itself", P, r"apart from the human-run `/sdlc:setup` writing\s+a project's setup files"),
-    ("setup lists an organization only when the human administers it", "skills/setup/SKILL.md", r"Recommend adding the organization \(Organizations\)\s+only when the human administers it"),
+    ("setup lists an organization only when the human administers it", "skills/setup/SKILL.md", r"Recommend adding the\s+organization \(`owned\.organizations`\)\s+only when the human administers it"),
     ("setup scans what git holds before pushing, and new history before its first commit", "skills/setup/references/github-setup.md", r"\*\*The scan\*\* checks exactly what git holds, never the working folder.*\*\*before the first\s+commit\*\*"),
     ("setup checks admin:org for organization types and fields", "skills/setup/SKILL.md", r"`admin:org`\s+for an organization whose issue types or fields setup may create"),
     ("setup writes files itself when the Release Engineer's worktree can't reach the clone", "skills/setup/SKILL.md", r"worktree can't reach the clone, so write the files\s+yourself"),
@@ -379,6 +382,7 @@ FORBIDDEN = [
     ("Enterprise ownership entries removed", "**/*", r"### Enterprises|read:enterprise|sdlc/enterprises|Listed enterprises"),
     ("Pause flags no-push and keep-running removed", "**/*", r"no-push|keep-running"),
     ("Pause renamed to stop", "**/*", r"sdlc:pause|skills/pause|`paused`|chore\(wip\): pause"),
+    ("Markdown config replaced by settings.json", "**/*", r"config\.md|config\.example|`- (span|jurisdictions|inbox_threshold):`"),
     ("Outdated no-nesting claim removed", "**/*", r"Execution is flat|plain subagent cannot spawn|Plain subagents can't"),
 ]
 
@@ -408,6 +412,18 @@ def structural():
                 problems.append(f"{path}: frontmatter missing name or description")
         except Exception as e:
             problems.append(f"{path}: frontmatter does not parse ({e})")
+    try:
+        example = json.load(open(os.path.join(ROOT, "settings.example.json")))
+        schema = json.load(open(os.path.join(ROOT, "settings.schema.json")))
+        version = json.load(open(os.path.join(ROOT, ".claude-plugin/plugin.json")))["version"]
+        # release-please moves this URL with the version (release-please-config.json).
+        url = f"https://raw.githubusercontent.com/KnobanLabs/sdlc/v{version}/plugins/sdlc/settings.schema.json"
+        if example.get("$schema") != url:
+            problems.append(f"settings.example.json: $schema must be {url}")
+        if set(example) != set(schema["properties"]):
+            problems.append("settings.example.json and settings.schema.json must list the same keys")
+    except Exception as e:
+        problems.append(f"settings checks could not run ({e!r})")
     for path in files("agents/*.md"):
         try:
             fm = frontmatter(path)
@@ -435,7 +451,7 @@ def structural():
         problems.append(f"protocol org table lists agent {name} with no agents/{name}.md")
     for name in sorted(agents - table):
         problems.append(f"agents/{name}.md is missing from the protocol org table")
-    local = {"profile.md", "exploration-log.md", "job.md", "ledger.md", "inbox.md", "config.md", "standards.md", "risk-register.md", "owner.md", "setup.md", "brief.md"}
+    local = {"profile.md", "exploration-log.md", "job.md", "ledger.md", "inbox.md", "standards.md", "risk-register.md", "owner.md", "setup.md", "brief.md"}
     for path in files("skills/**/*.md"):
         # A skill may keep references of its own, beside the protocol's.
         here = os.path.dirname(path)

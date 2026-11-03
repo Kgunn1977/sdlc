@@ -15,8 +15,8 @@ how likely the human would want to weigh in (if unsure, the higher one):
 | high | A significant direction the human would likely want to set: creative directions, lasting design choices, requirement trade-offs. |
 | critical | Must come from the human: every approval the protocol requires, anything irreversible or destructive, security, data loss, external publishing, scope changes. |
 
-**Threshold:** from the invocation, else `- inbox_threshold:` in
-`~/.sdlc/config.md`, else `high`; the human may change it anytime. Questions at or
+**Threshold:** from the invocation, else `inbox_threshold` in
+`~/.sdlc/settings.json`, else `high`; the human may change it anytime. Questions at or
 above it go to the inbox (`jobs/<job-id>/inbox.md`) and wait there until the
 human checks it; never ask them in the conversation. Below it, decide yourself,
 choosing what best fits the human's original request, and log the decision in the
@@ -59,7 +59,7 @@ than raw output. Other roles conducting themselves do their own work.
   don't prove, Security or the legal tree when the work materially touches
   their areas. The span and Claude Code limits are ceilings, not targets.
 - **Span of control:** coordinate at most **8** tasks per run directly
-  (`- span:` in `~/.sdlc/config.md`), counting every task you brief over the
+  (`span` in `~/.sdlc/settings.json`), counting every task you brief over the
   run, not only those running at once. Split a larger part into workstreams
   (`workstreams.md`).
 - **Claude Code limits:** at job start, compare the plan with

@@ -18,6 +18,11 @@
           "type": "json",
           "path": "plugins/sdlc/.claude-plugin/plugin.json",
           "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "plugins/sdlc/settings.example.json",
+          "jsonpath": "$['$schema']"
         }
       ]
     }

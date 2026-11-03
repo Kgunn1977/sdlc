@@ -6,8 +6,9 @@ A repository is the human's own if it matches any entry, on the same host
 (`github.com` entries never match an Enterprise Server host, or the reverse):
 
 - its current owner is the human's login (`gh api user -q .login`)
-- its current owner is a user or organization listed in `~/.sdlc/config.md`
-- it is listed under Repositories in `~/.sdlc/config.md`
+- its current owner is a user or organization listed under `owned.users` or
+  `owned.organizations` in `~/.sdlc/settings.json`
+- it is listed under `owned.repositories` there
 
 Look the owner up with `gh repo view <owner/repo> --json owner -q .owner.login`;
 it follows renames and transfers, so a moved repo is judged by its new owner.
@@ -19,8 +20,8 @@ and tell the human. Enterprises can't be listed. Everything else is
 human can push to. A PR from the human's fork to
 an upstream repo writes to the upstream: external. Record the result and the
 matching rule in the repo profile; re-check if the remote changes. **Fail safe:**
-an owner or repository that isn't listed, or can't be looked up, means
-external; say why.
+an owner or repository that isn't listed or can't be looked up, or a
+settings file that doesn't parse, means external; say why.
 
 ## 2. Dangerous, destructive, and irreversible
 

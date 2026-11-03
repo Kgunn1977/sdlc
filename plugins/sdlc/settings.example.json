@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/KnobanLabs/sdlc/v0.27.1/plugins/sdlc/settings.schema.json",
+  "owned": {
+    "users": [],
+    "organizations": [],
+    "repositories": []
+  },
+  "jurisdictions": [],
+  "inbox_threshold": "high",
+  "span": 8,
+  "standing_orders": []
+}

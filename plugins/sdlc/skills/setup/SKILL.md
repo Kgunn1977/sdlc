@@ -127,14 +127,14 @@ settings and protections, security, automation, Project), each row giving
 what will be created or set, its value, and "default", "kept as it is", or why
 it differs. Then list:
 
-- **Ownership:** a repository owned by an organization that `~/.sdlc/config.md`
-  doesn't list is external (`approvals.md`, section 1), so every later write
-  would ask for approval. Recommend adding the organization (Organizations)
-  only when the human administers it
+- **Ownership:** a repository owned by an organization that
+  `~/.sdlc/settings.json` doesn't list is external (`approvals.md`, section 1),
+  so every later write would ask for approval. Recommend adding the
+  organization (`owned.organizations`) only when the human administers it
   (`gh api user/memberships/orgs/<org> --jq .role` is `admin`) or created it in
   this setup, since that makes every repository in it their own. Otherwise
-  recommend listing just this repository (Repositories). Declining both keeps
-  it external.
+  recommend listing just this repository (`owned.repositories`). Declining
+  both keeps it external.
 - **Approvals:** every action `approvals.md` treats as dangerous, irreversible,
   or a settings change: creating the repository at its visibility, the first
   commit pushed straight to the default branch (the one direct push, made
@@ -159,8 +159,10 @@ GitHub refuses a step, take the fallback in `references/github-setup.md`, tell
 the human what's missing and why, and record what the later steps must do
 instead (Project fields rather than issue fields, no merge queue, and so on).
 
-1. **Ownership:** add the organization or the repository to
-   `~/.sdlc/config.md`, as planned.
+1. **Ownership:** add the organization or the repository, with its host, to
+   `owned` in `~/.sdlc/settings.json`, as planned, leaving it valid JSON. If
+   it's missing, start it from the plugin's `settings.example.json` (two
+   folders above this skill's), which carries the `$schema` line.
 2. **Repository:** create it and clone it, or use the existing one
    (`references/github-setup.md`, section 2).
 3. **Issue types and fields** for an organization: section 7, before any file

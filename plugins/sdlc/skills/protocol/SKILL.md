@@ -134,7 +134,7 @@ report what remains blocked and on which question.
 Read `references/approvals.md` before any push, delete, rewrite, merge,
 publish, or GitHub write; it covers ownership, the scratch exception, and merges.
 
-- **Repos the human owns** (per `~/.sdlc/config.md`): act within your role,
+- **Repos the human owns** (per `~/.sdlc/settings.json`): act within your role,
   except **dangerous, destructive, or irreversible** operations, which always
   need the human's explicit approval. Unsure? Treat it as needing approval.
 - **Other repos:** every write needs approval. Reads are always fine.
@@ -194,7 +194,7 @@ when your conductor says stop, do so safely per `references/stopping.md`.
 
 Higher wins: (1) this protocol's hard rules; (2) repo skills and conventions in
 human-owned repos; (3) the human's standing orders (role skills and
-`~/.sdlc/config.md`); (4) the Architect's published standards; (5) the generic
+`~/.sdlc/settings.json`); (4) the Architect's published standards; (5) the generic
 role charter. Our defaults (branch names, docs layout, ADRs, labels) apply only
 where the repo has none.
 
@@ -249,8 +249,10 @@ conflict between a repo skill and a standing order goes to the human once.
   and the durable folders `brand/`, `design/<issue>/`, `product/`,
   `marketing/`, `analytics/`, `community/`, `legal/`. Cleanup never touches the
   durable folders. App-facing material reaches the repo only through an Engineer.
-- **Config:** `~/.sdlc/config.md` (owned users, organizations, and
-  repositories, inbox threshold, jurisdictions, span, extra standing orders).
+- **Settings:** `~/.sdlc/settings.json`: `owned` (users, organizations, and
+  repositories), `inbox_threshold`, `jurisdictions`, `span`, `standing_orders`.
+  `$schema` is for editors. A missing key takes its default; a file that
+  doesn't parse lists nothing as owned, and you tell the human.
 
 Job IDs are `YYYY-MM-DD-<slug>-<4 random hex>`, unique even when sessions run
 side by side. Keep all job state on disk so a fresh session can resume.

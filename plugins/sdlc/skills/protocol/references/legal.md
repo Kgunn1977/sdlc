@@ -14,7 +14,7 @@ section 4 applies.
 
 ## 2. Jurisdictions and sources
 
-- **Jurisdictions:** from `- jurisdictions:` in `~/.sdlc/config.md`, plus where
+- **Jurisdictions:** from `jurisdictions` in `~/.sdlc/settings.json`, plus where
   the product's users are (the profile's legal section). If neither says, raise
   it as a high inbox question and work from the most likely reading, stated.
 - **Sources:** primary sources first (statutes, regulations, regulator guidance,

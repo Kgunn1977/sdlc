@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sdlc settings",
+  "description": "Settings every sdlc role reads from ~/.sdlc/settings.json. A key left out takes its default.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "This schema, at the plugin version the file was written for. Editors use it; the roles ignore it."
+    },
+    "owned": {
+      "type": "object",
+      "description": "Repositories owned by these users and organizations, and the repositories listed, count as yours: writes there need no approval, except dangerous operations and new dependencies and tools. Your own account is always included. Enterprises can't be listed.",
+      "additionalProperties": false,
+      "properties": {
+        "users": {
+          "type": "array",
+          "description": "Users whose repositories count as yours.",
+          "items": { "$ref": "#/definitions/account" },
+          "default": []
+        },
+        "organizations": {
+          "type": "array",
+          "description": "Organizations whose repositories count as yours. List only organizations you administer: every repository in one becomes yours.",
+          "items": { "$ref": "#/definitions/account" },
+          "default": []
+        },
+        "repositories": {
+          "type": "array",
+          "description": "Single repositories that count as yours, beyond those of the accounts above. A listed repository that is renamed or transferred stops counting.",
+          "items": { "$ref": "#/definitions/repository" },
+          "default": []
+        }
+      }
+    },
+    "jurisdictions": {
+      "type": "array",
+      "description": "Where legal and compliance analysis applies, as countries or states. Empty means the legal tree asks first.",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "default": [],
+      "examples": [["US-ID", "EU"]]
+    },
+    "inbox_threshold": {
+      "description": "Questions at or above this priority wait in the inbox for you; below it, conductors decide and report. Critical questions, including every approval, always come to you.",
+      "enum": ["low", "medium", "high", "critical"],
+      "default": "high"
+    },
+    "span": {
+      "type": "integer",
+      "description": "Tasks one conductor coordinates directly per run. Larger jobs split into workstreams of at most this many tasks, each under a workstream lead.",
+      "minimum": 1,
+      "default": 8
+    },
+    "standing_orders": {
+      "type": "array",
+      "description": "Instructions every role follows, one string each.",
+      "items": { "type": "string", "minLength": 1 },
+      "default": []
+    }
+  },
+  "definitions": {
+    "host": {
+      "type": "string",
+      "description": "github.com, or an Enterprise Server host. github.com entries never match an Enterprise Server host, or the reverse.",
+      "pattern": "^[A-Za-z0-9.-]+(:[0-9]+)?$",
+      "examples": ["github.com"]
+    },
+    "account": {
+      "type": "object",
+      "required": ["name", "host"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The user or organization login.",
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "host": { "$ref": "#/definitions/host" }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "required": ["name", "host"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The repository as owner/repo.",
+          "pattern": "^[A-Za-z0-9_-]+/[A-Za-z0-9._-]+$"
+        },
+        "host": { "$ref": "#/definitions/host" }
+      }
+    }
+  }
+}
