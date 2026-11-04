@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0](https://github.com/KnobanLabs/sdlc/compare/v0.27.1...v1.0.0) (2026-11-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* move the sdlc config to a settings.json with a schema ([#10](https://github.com/KnobanLabs/sdlc/issues/10))
+
+### Features
+
+* add recommended auto mode settings and a script to adopt them ([#12](https://github.com/KnobanLabs/sdlc/issues/12)) ([4d37cc7](https://github.com/KnobanLabs/sdlc/commit/4d37cc71da076eed3859cf7c8c68dc41e2494bed))
+* move the sdlc config to a settings.json with a schema ([#10](https://github.com/KnobanLabs/sdlc/issues/10)) ([96bb0e8](https://github.com/KnobanLabs/sdlc/commit/96bb0e8dd70fb0153d2927fa7af2590405ba35c8))
+
 ## [0.27.1](https://github.com/KnobanLabs/sdlc/compare/v0.27.0...v0.27.1) (2026-10-31)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "sdlc",
-  "version": "0.27.1",
+  "version": "1.0.0",
   "description": "A role-based agent org (technology, marketing, legal, and product trees under a CEO) that runs the software development lifecycle, markets the product, and advises on legal and compliance, on any GitHub repository.",
   "author": {
     "name": "KnobanLabs",
