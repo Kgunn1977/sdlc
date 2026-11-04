@@ -622,9 +622,10 @@ function closeOfficeCard(){
         const r = await api('/close');
         if (!r.ok) { closedByYou = false; toast(r.message); return; }
         closeDialog();
+        LEAVING = true;
         if (r.waiting) return;
         if (es) es.close();
-        goOffline('OFFICE CLOSED', 'The office is closed and every session has stopped. You can close this tab.');
+        walkOutThen(() => goOffline('OFFICE CLOSED', 'The office is closed and every session has stopped. You can close this tab.'));
       } })
     ]));
   } });
@@ -647,7 +648,7 @@ document.getElementById('b-closenow').addEventListener('click', async ev => {
   ev.currentTarget.disabled = false;
   if (!r.ok) { toast(r.message); return; }
   if (es) es.close();
-  goOffline('OFFICE CLOSED', 'The office is closed and every session has stopped. You can close this tab.');
+  walkOutThen(() => goOffline('OFFICE CLOSED', 'The office is closed and every session has stopped. You can close this tab.'));
 });
 function helpCard(){
   openDialog({ name: 'How to play', sub: 'SDLC Office', text: 'You run the plugin. Roles that need you wait in The Line outside your door.', build: body => {

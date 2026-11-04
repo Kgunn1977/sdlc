@@ -52,15 +52,17 @@ window.SDLC = {
   toast: t => toast(t),
   current: () => readState().project.id,
   name: k => nameOf(k),
-  hands: ks => { HANDS = (ks || []).slice(); },
   talking: k => { convo = k ? { key: k, mode: 'meeting' } : null; },
+  table: (team, working) => tableSync(team, working),
+  tableTick: () => tableTick(performance.now()),
+  names: () => { const out = {}; ROSTER.forEach(k => { out[k] = nameOf(k); }); return out; },
   refresh: () => refreshHud(),
   closeCard: () => { if (dlgOpen()) closeDialog(); },
   busy: () => dlgOpen() || mapOpen,
-  kickoff: members => {
-    KICK = members ? members.slice() : null;
-    if (!KICK) { HANDS = []; convo = null; return; }
+  kickoff: team => {
     convo = null;
+    if (!team) { KICK = null; TABLE_REAL = []; TABLE_WORK = []; FILLER_OUT = null; return; }
+    tableOpen(team);
     ['ceo'].concat(KICK).forEach(k => { const e = ents[k]; if (!e) return; const sp = desiredSpot(k); e.moving = false; e.path = null; e.goal = ''; e.px = sp.x * T; e.py = sp.y * T; e.tx = sp.x; e.ty = sp.y; e.dir = sp.face; e.seated = !!sp.seated; e.guest = !!sp.guest; e.ox = 0; });
     placePlayer(CONF_YOU.x, CONF_YOU.y, 'up');
   },

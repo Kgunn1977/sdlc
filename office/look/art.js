@@ -340,7 +340,7 @@ function drawFurn(fu, now){
   else if (d === 'podium') { box(ctx, X + 2, Y - 6, 12, 20, '#8C6A48'); F(ctx, X + 4, Y - 2, 8, 10, '#7A5A3C'); box(ctx, X + 1, Y - 9, 14, 5, '#B08868'); F(ctx, X + 4, Y - 11, 8, 1, '#F4F4FC'); F(ctx, X + 11, Y - 11, 1, 1, '#FCBC3C'); }
   else if (d === 'table') { const w = fu.w * T; F(ctx, X, Y - 6, w, 32, '#140A24'); F(ctx, X + 1, Y - 5, w - 2, 24, '#D4D8E4'); F(ctx, X + 1, Y - 5, w - 2, 2, '#F4F6FC'); for (let k = 0; k < w; k += 24) F(ctx, X + 8 + k, Y - 3, 10, 1, 'rgba(255,255,255,0.6)'); F(ctx, X + 1, Y + 19, w - 2, 6, '#8C90A4'); F(ctx, X + 1, Y + 19, w - 2, 1, '#B4B8CC');
     for (let i = 0; i < 8; i++) { const px = X + 6 + i * 22, py = Y + (i % 3) * 5; ctx.fillStyle = SH; ctx.fillRect(px + 1, py + 1, 8, 6); F(ctx, px, py, 8, 6, '#FCFCFC'); F(ctx, px + 1, py + 1, 5, 1, '#9898B0'); F(ctx, px + 1, py + 3, 6, 1, '#9898B0'); F(ctx, X + 12 + i * 22, Y + 2 + (i % 2) * 6, 6, 1, '#E83020'); F(ctx, X + 12 + i * 22, Y + 2 + (i % 2) * 6, 1, 1, '#202028'); }  drawPlate(ctx, SEATS.rev1.x * T + 8, Y + 18, 'rev1'); drawPlate(ctx, SEATS.rev2.x * T + 8, Y + 18, 'rev2'); }
-  else if (d === 'ctable') { const w = fu.w * T, h = fu.h * T; F(ctx, X, Y - 5, w, h + 5, '#140A24'); F(ctx, X + 1, Y - 4, w - 2, h - 4, '#7A5838'); F(ctx, X + 1, Y - 4, w - 2, 1, '#A8805A'); F(ctx, X + 1, Y - 4, 1, h - 4, '#946C48'); for (let k = 0; k < h - 12; k += 9) F(ctx, X + 8, Y + 2 + k, w - 16, 1, '#6A4C30'); F(ctx, X + 1, Y + h - 8, w - 2, 7, '#4E3624'); F(ctx, X + 1, Y + h - 8, w - 2, 1, '#2E1E12'); for (let k = 0; k < 3; k++) { F(ctx, X + 6, Y + 6 + k * 30, 9, 7, '#F4F4FC'); F(ctx, X + 7, Y + 8 + k * 30, 6, 1, '#9898B0'); F(ctx, X + 33, Y + 18 + k * 30, 9, 7, '#F4F4FC'); F(ctx, X + 34, Y + 20 + k * 30, 6, 1, '#9898B0'); } }
+  else if (d === 'ctable') { const w = fu.w * T, h = fu.h * T; F(ctx, X, Y - 5, w, h + 5, '#140A24'); F(ctx, X + 1, Y - 4, w - 2, h - 4, '#7A5838'); F(ctx, X + 1, Y - 4, w - 2, 1, '#A8805A'); F(ctx, X + 1, Y - 4, 1, h - 4, '#946C48'); for (let k = 0; k < h - 12; k += 9) F(ctx, X + 8, Y + 2 + k, w - 16, 1, '#6A4C30'); F(ctx, X + 1, Y + h - 8, w - 2, 7, '#4E3624'); F(ctx, X + 1, Y + h - 8, w - 2, 1, '#2E1E12'); }
   else if (d === 'alarm') { F(ctx, X + 7, Y - 2, 2, 16, '#5C5870'); box(ctx, X + 2, Y - 12, 12, 11, '#B01C14'); F(ctx, X + 5, Y - 9, 6, 5, '#F83800'); F(ctx, X + 5, Y - 9, 6, 1, '#FF9878'); F(ctx, X + 6, Y - 8, 2, 1, '#FFE0D8'); if (!RM && Math.floor(now / 600) % 2) { ctx.fillStyle = 'rgba(255,60,20,0.12)'; ctx.fillRect(X - 3, Y - 17, 22, 21); } }
   else if (d === 'dial') {
     F(ctx, X + 7, Y - 2, 2, 16, '#5C5870'); box(ctx, X + 1, Y - 14, 14, 13, '#ECECE4');
@@ -519,7 +519,6 @@ function hiPass(now){
     else if (q.t === 'mk') { const c = q.mk.fill; pill(D, q.x - 0.5, q.y - 0.5, 10, 11.5, tone(c, 0.45), tone(c, -0.2)); D.fillStyle = tone(c, -0.2); D.beginPath(); D.moveTo(q.x + 2.5, q.y + 10.8); D.lineTo(q.x + 6.5, q.y + 10.8); D.lineTo(q.x + 4.5, q.y + 13.5); D.closePath(); D.fill(); D.fillStyle = 'rgba(255,255,255,0.55)'; rr(D, q.x + 1, q.y + 0.5, 7, 2, 1); D.fill(); label(D, q.mk.glyph === 'check' ? '✓' : q.mk.glyph, q.x + 4.5, q.y + 6, 8.5, '#140A24', 800);
       if (q.n > 1) { D.fillStyle = '#FFFFFF'; D.beginPath(); D.arc(q.x + 10.5, q.y - 0.5, 3.4, 0, 7); D.fill(); D.strokeStyle = '#140A24'; D.lineWidth = 0.5; D.stroke(); label(D, String(Math.min(9, q.n)), q.x + 10.5, q.y - 0.2, 5, '#140A24'); } }
     else if (q.t === 'dots') { pill(D, q.x - 1, q.y + 1, 13, 8, '#FFFFFF', '#CFD2E6'); D.fillStyle = '#2A1E3C'; for (let i = 0; i < 3; i++) { D.beginPath(); D.arc(q.x + 2.5 + i * 3, q.y + 5, 1, 0, 7); D.fill(); } }
-    else if (q.t === 'hand') { const x = q.x + 1, y = q.y - 2; D.fillStyle = 'rgba(8,4,20,0.35)'; rr(D, x + 0.8, y + 4.8, 8, 7, 2); D.fill(); D.fillStyle = '#FFD8A8'; D.strokeStyle = '#3A1E10'; D.lineWidth = 0.5; [0, 2, 4, 6].forEach((dx, i) => { rr(D, x + dx, y + (i === 0 || i === 3 ? 1.2 : 0), 1.8, 6, 0.9); D.fill(); D.stroke(); }); rr(D, x - 0.2, y + 4, 8, 7, 2.2); D.fill(); D.stroke(); rr(D, x - 2.2, y + 5.2, 3, 2, 1); D.fill(); D.stroke(); }
     else if (q.t === 'pm') { label(D, '!', q.x + 5, q.y + 6.5, 10, 'rgba(12,6,24,0.5)', 800); label(D, '!', q.x + 4.5, q.y + 6, 10, '#FCE45C', 800); }
   });
   D.setTransform(1, 0, 0, 1, 0, 0);
@@ -528,7 +527,21 @@ function hiPass(now){
 }
 function drawOverlays(now){
   queue().forEach(g => { const e = ents[g.key]; if (!e || e.hx == null) return; hq({ t: 'mk', x: e.hx, y: e.hy, mk: markerOf(g.entries[0]), n: g.entries.length }); });
-  ROSTER.forEach(k => { const e = ents[k]; if (e.hx == null) return; const st = roleState(k); if (st === 'blocked') hq({ t: 'dots', x: e.hx, y: e.hy }); if (HANDS.indexOf(k) >= 0) hq({ t: 'hand', x: e.hx, y: e.hy }); if (k === 'pm' && st === 'working') hq({ t: 'pm', x: e.hx, y: e.hy }); });
+  ROSTER.forEach(k => { const e = ents[k]; if (e.hx == null) return; const st = roleState(k); if (st === 'blocked') hq({ t: 'dots', x: e.hx, y: e.hy }); if (k === 'pm' && st === 'working') hq({ t: 'pm', x: e.hx, y: e.hy }); });
+}
+/* Papers at the conference table during a meeting. Whoever is really working shuffles theirs; the CEO stands, so holds a clipboard. */
+function drawTable(now){
+  if (!KICK) return;
+  const beat = RM ? 0 : Math.floor(now / 240);
+  KICK.forEach((k, i) => {
+    if (!k) return;
+    const c = CONF_SEATS[i], x = c.face === 'right' ? 13 * T + 2 : 15 * T + 5, y = c.y * T + 3;
+    F(C0, x, y, 9, 7, '#F4F4FC'); F(C0, x + 1, y + 2, 6, 1, '#9898B0'); F(C0, x + 1, y + 4, 5, 1, '#9898B0');
+    if (TABLE_WORK.includes(k)) { const f = (beat + i) % 4, dx = [0, 2, 0, -2][f], dy = [0, 1, 2, 1][f]; F(C0, x + dx, y - dy, 9, 7, '#FFFFFF'); F(C0, x + dx + 1, y - dy + 2, 6, 1, '#7878A0'); }
+  });
+  const x = CONF_CEO.x * T + 4, y = CONF_CEO.y * T + 6, flip = TABLE_WORK.includes('ceo') ? beat % 2 : 0;
+  F(C0, x, y, 8, 9, '#5A3A20'); F(C0, x + 1, y + 1, 6, 7, '#F4F4FC'); F(C0, x + 2, y, 4, 1, '#B0B0C0');
+  if (flip) F(C0, x + 1, y + 1, 6, 3, '#D0D0E0'); else F(C0, x + 2, y + 3, 4, 1, '#9898B0');
 }
 function render(now){
   moveCam(now); HIQ.length = 0;
@@ -538,10 +551,11 @@ function render(now){
   const list = [];
   FURN.forEach(f => { if ((f.x + (f.w || 1)) * T < cam.x - 16 || f.x * T > cam.x + VW + 16 || f.y * T < cam.y - 40 || f.y * T > cam.y + VH + 40) return; list.push({ b: f.base, f }); });
   list.forEach(it => drawShadow(it.f));
-  ROSTER.forEach(k => { const e = ents[k]; e.hx = null; list.push({ b: Math.round(e.py) + 16 + (e.moving ? 0.5 : 0), e }); });
+  ROSTER.forEach(k => { const e = ents[k]; e.hx = null; if (!e.gone) list.push({ b: Math.round(e.py) + 16 + (e.moving ? 0.5 : 0), e }); });
   list.push({ b: Math.round(P.py) + 16.4, e: P, p: true });
   list.sort((a, b) => a.b - b.b);
   list.forEach(it => { if (it.f) drawFurn(it.f, now); else drawEnt(it.e, now); });
+  drawTable(now);
   drawOverlays(now);
   C0.setTransform(1, 0, 0, 1, 0, 0);
   const src = C0.getImageData(0, 0, VW, VH);
@@ -558,7 +572,7 @@ function mix(a, b, t){ const pa = [1, 3, 5].map(i => parseInt(a.substr(i, 2), 16
 function drawMap(ctx, ts, now){
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(mapBase, 0, 0, W * ts, H * ts);
-  ROSTER.forEach(k => { const e = ents[k]; const x = (e.px / T + 0.5) * ts, y = (e.py / T + 0.5) * ts, s = Math.max(3, ts); F(ctx, x - s / 2 - 1, y - s / 2 - 1, s + 2, s + 2, '#000'); F(ctx, x - s / 2, y - s / 2, s, s, DEPT[deptOf(k)].color); });
+  ROSTER.forEach(k => { const e = ents[k]; if (e.gone) return; const x = (e.px / T + 0.5) * ts, y = (e.py / T + 0.5) * ts, s = Math.max(3, ts); F(ctx, x - s / 2 - 1, y - s / 2 - 1, s + 2, s + 2, '#000'); F(ctx, x - s / 2, y - s / 2, s, s, DEPT[deptOf(k)].color); });
   if (RM || Math.floor(now / 300) % 2) { const x = (P.px / T + 0.5) * ts, y = (P.py / T + 0.5) * ts, s = Math.max(3, ts) + 1; F(ctx, x - s / 2 - 1, y - s / 2 - 1, s + 2, s + 2, '#000'); F(ctx, x - s / 2, y - s / 2, s, s, '#FFFFFF'); }
 }
 const mini = document.getElementById('mini'); const mctx = mini.getContext('2d');

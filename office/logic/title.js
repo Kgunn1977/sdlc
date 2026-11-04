@@ -7,7 +7,7 @@ const $ = id => document.getElementById(id);
 const ts = $('ts');
 const RM = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const LIMIT = 200 * 1024 * 1024;
-const TEAM = { scratch: ['cto', 'cpo', 'pm', 'architect'], takeover: ['architect', 'pm', 'cto', 'qa'], meeting: ['cto', 'cmo', 'clo', 'cpo'] };
+let slotAsk = null; // the saved game being taken off the list
 let screen = 'title', attract = true, loadTimer = 0, loadDone = null, uid = 0, filesKey = null, filesFrom = null, drawerSel = 'uploads', tPick = null, drawers = [], errors = [], adding = [];
 let pending = null; // the project being started: { mode, project, name, what, visibility, gh, folder }
 $('ts-ver').textContent = 'v0.2';
@@ -40,8 +40,7 @@ const TITLE_ACTIONS = {
     const box = $('ts-wf'); box.textContent = '';
     const a = await G.api('/gh-status', {});
     if (!a.ok || !a.hasWorkflow) { renderWorkflow(a.message || 'Your GitHub sign-in could not be checked.'); return; }
-    const notes = notesOf();
-    const r = await G.api('/kickoff-finish', { project: pending.project, notes: notes });
+    const r = await G.api('/kickoff-finish', { project: pending.project });
     if (!r.ok) { if (r.needsWorkflow) renderWorkflow(r.message); else box.append(el('p', 'note', r.message)); return; }
     finishKickoff('The CEO is starting setup. Anything that changes GitHub waits for your Approve or Deny.');
   },
@@ -72,12 +71,16 @@ const TITLE_ACTIONS = {
   callMeeting(){ const s = G.state(); if (!s.connected) { G.toast('The office is not connected.'); return; } G.closeUi(); pending = { mode: 'meeting', project: s.project.id, name: s.project.name, what: s.job.status === 'none' ? '' : 'What the team is working on now: ' + s.job.goal }; startKickoff(); },
   meetingToWork(){ finishMeeting('work', 'Max Agenda has the notes and is getting the team moving.'); },
   meetingNotes(){ finishMeeting('notes', 'The notes are in the file cabinet.'); },
-  leaveMeeting(){ endMeeting(); },
+  meetingNext(){ if (!M) return; if (M.skip) M.skip(); else release(); },
+  leaveMeeting(){ G.api('/meeting-leave', { project: pending.project }); endMeeting(); },
+  removeAsk(id){ slotAsk = id; renderSlots(); },
+  removeNo(){ slotAsk = null; renderSlots(); },
+  async removeYes(id){ slotAsk = null; const r = await G.api('/project-remove', { project: id }); if (!r.ok) G.toast(r.message); await new Promise(ok => setTimeout(ok, 150)); renderSlots(); },
   async readFiles(){
     const r = await G.api('/read-files', { project: pending.project });
     if (!r.ok) { G.toast(r.message); return; }
     M.reading = true; G.state().reading = { status: 'reading' }; renderReadBox();
-    M.waitBoss = false; enqueue([{ speaker: 'ceo', text: 'Off they go. The team is reading everything now, and this can take a while. I will pick this up as soon as they are back.', ask: true }]);
+    enqueue([{ speaker: 'ceo', text: 'Off they go. The team is reading everything now, and this can take a while. I will pick this up as soon as they are back.', ask: true }]);
   },
   answerCards(){ G.kickoff(null); close(); G.toast('The meeting comes back by itself when the team has finished reading.'); },
   leaveStudy(){ close(); G.toast('They keep studying. The meeting opens by itself when the briefing is ready.'); },
@@ -85,9 +88,9 @@ const TITLE_ACTIONS = {
 };
 function goBack(){
   if (screen === 'files') { TITLE_ACTIONS.closeFiles(); return; }
-  if (screen === 'kickoff' && pending && pending.mode === 'meeting') { endMeeting(); return; }
+  if (screen === 'kickoff' && pending && pending.mode === 'meeting') { TITLE_ACTIONS.leaveMeeting(); return; }
   const to = ({ newchoice: 'title', new: 'newchoice', takeover: 'newchoice', loadgame: 'title', studying: 'title', kickoff: pending && pending.mode === 'takeover' ? 'title' : 'new' })[screen];
-  if (screen === 'kickoff') { stopMeeting(); G.kickoff(null); if (pending && pending.mode === 'scratch') G.api('/new-project-cancel', { project: pending.project }); pending = null; }
+  if (screen === 'kickoff') { stopMeeting(); G.kickoff(null); if (pending) G.api(pending.mode === 'scratch' ? '/new-project-cancel' : '/meeting-leave', { project: pending.project }); pending = null; }
   if (to) show(to);
 }
 ts.addEventListener('click', ev => {
@@ -97,16 +100,15 @@ ts.addEventListener('click', ev => {
 });
 function endMeeting(notice){ stopMeeting(); pending = null; G.kickoff(null); close(); if (notice) G.toast(notice); }
 async function finishMeeting(choice, notice){
-  const r = await G.api('/meeting-finish', { project: pending.project, choice: choice, notes: notesOf() });
+  const r = await G.api('/meeting-finish', { project: pending.project, choice: choice });
   if (!r.ok) { G.toast(r.message); return; }
   endMeeting(notice);
 }
 async function takeoverChoice(choice, notice){
-  const r = await G.api('/takeover-finish', { project: pending.project, choice: choice, notes: notesOf() });
+  const r = await G.api('/takeover-finish', { project: pending.project, choice: choice });
   if (!r.ok) { G.toast(r.message); return; }
   finishKickoff(notice);
 }
-function notesOf(){ return (M ? M.lines : []).filter(l => l.speaker !== 'note').map(l => title(l.speaker) + ': ' + l.text).join('\n'); }
 function renderWorkflow(msg){
   const box = $('ts-wf'); if (!box) return; box.textContent = '';
   box.append(el('p', 'ts-say', msg), cmdRow([btn('btn next', 'SIGN IN TO GITHUB', 'signIn')]));
@@ -179,13 +181,15 @@ function tick(){
     if (!pending || pending.project !== s.project.id) pending = { mode: 'takeover', project: s.project.id, name: s.project.name, gh: s.repo.name };
     startKickoff();
   } else if (pending && pending.mode === 'takeover' && s.project.id === pending.project && s.study && !ts.hidden && screen === 'studying') renderStudying();
+  G.tableTick();
+  if (pending && M && s.project.id === pending.project) syncMeeting(s);
   if (pending && pending.mode === 'meeting' && M && s.project.id === pending.project) {
     renderReadBox();
     const st = (s.reading || {}).status;
     if (M.reading && st !== 'reading' && (!ts.hidden || !G.busy())) {
       M.reading = false;
       if (ts.hidden) startKickoff();
-      M.waitBoss = false; enqueue([{ speaker: 'ceo', ask: true, text: st === 'done' ? 'The team is back and has read everything. What do you want to talk about?' : 'The team could not finish reading. Press Read project files to send them again.' }]);
+      enqueue([{ speaker: 'ceo', ask: true, text: st === 'done' ? 'The team is back and has read everything. What do you want to talk about?' : 'The team could not finish reading. Press Read project files to send them again.' }]);
     }
   }
   const code = s.signin;
@@ -194,31 +198,39 @@ function tick(){
 (window.SDLCTicks = window.SDLCTicks || []).push(tick);
 
 /* kickoff meeting, held in the office's Conference Room */
-function startKickoff(){
-  G.kickoff(TEAM[pending.mode]);
+let opening = false;
+async function startKickoff(){
+  if (opening || !pending) return;
+  opening = true;
+  const p = pending, r = await G.api('/meeting-open', { project: p.project, mode: p.mode, what: p.what || '', names: G.names() });
+  opening = false;
+  if (!r.ok) { G.toast(r.message); return; }
+  if (pending !== p) return;
+  G.kickoff(r.meeting.team);
   open('kickoff');
   if (window.SDLCHelp) window.SDLCHelp.comment('meeting');
 }
 function el(tag, cls, text){ const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
 function btn(cls, text, act, arg, arg2){ const b = el('button', cls, text); b.type = 'button'; b.dataset.act = act; if (arg != null) b.dataset.arg = arg; if (arg2 != null) b.dataset.arg2 = arg2; return b; }
-/* ---------- Kickoff meeting: a real conversation through the helper's quick route ---------- */
+/* ---------- The meeting: real sessions in the helper. This screen shows what they say, in order, once it is ready ---------- */
 let M = null;
 function renderKickoff(){
   const P = $('ts-kpanel'); P.textContent = '';
-  if (!M || M.key !== pending.project) M = { key: pending.project, lines: [], queue: [], hands: [], busy: false, speaking: false, waitBoss: false, askedElse: false, started: false, current: null, turn: 0 };
+  if (!M || M.key !== pending.project) M = { key: pending.project, lines: [], queue: [], seen: 0, catchUp: true, speaking: false, holding: false, started: false, current: null };
   const head = el('div', 'ts-headrow'); head.append(el('h2', 'ts-h', pending.mode === 'meeting' ? 'TEAM MEETING' : 'KICKOFF MEETING')); P.append(head);
   const card = el('div', 'ts-card'); card.id = 'ts-card'; const face = el('canvas', 'ts-face sm'); face.width = 144; face.height = 144; face.id = 'ts-cface'; face.setAttribute('aria-hidden', 'true');
   const cbody = el('div'); const cn = el('div', 'dname'); cn.id = 'ts-cname'; const ct = el('p', 'ts-say'); ct.id = 'ts-ctext'; cbody.append(cn, ct); if (window.SDLCHelp) cbody.append(window.SDLCHelp.explainControl(ct)); card.append(face, cbody);
   card.addEventListener('click', ev => { if (!ev.target.closest('button') && M.skip) M.skip(); });
   P.append(card);
-  const hands = el('div', 'ts-hands'); hands.id = 'ts-hands'; P.append(hands);
+  const nextB = btn('btn next', 'NEXT', 'meetingNext'); nextB.id = 'ts-next'; P.append(cmdRow([nextB]));
+  const status = el('div', 'ts-hands'); status.id = 'ts-status'; P.append(status);
   const log = el('div', 'ts-log'); log.id = 'ts-log'; log.setAttribute('role', 'log'); log.setAttribute('aria-label', 'Meeting transcript'); P.append(log);
   const form = el('form', 'ts-sayform'); form.id = 'ts-sayform'; form.noValidate = true;
-  const lab = el('label', 'lab', 'SAY SOMETHING. EVERYONE HEARS IT.'); lab.htmlFor = 'ts-sayin';
+  const lab = el('label', 'lab', 'SAY SOMETHING. THE CEO PASSES IT ON.'); lab.htmlFor = 'ts-sayin';
   const ta = el('textarea'); ta.id = 'ts-sayin'; ta.rows = 2;
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
   const sendB = el('button', 'btn next', 'SEND'); sendB.type = 'submit'; sendB.id = 'ts-send';
-  form.append(lab, ta, cmdRow([sendB, el('span', 'note', 'Enter sends. Shift+Enter starts a new line.')]));
+  form.append(lab, ta, cmdRow([sendB, el('span', 'note', 'Enter sends. Shift+Enter starts a new line. Use a name to talk to someone directly, or ask to bring someone in.')]));
   form.addEventListener('submit', e => { e.preventDefault(); TITLE_ACTIONS.sayToMeeting(ta.value); });
   P.append(form);
   if (pending.mode === 'takeover') {
@@ -226,6 +238,7 @@ function renderKickoff(){
     [['What this project is', 'what'], ['What shape it’s in', 'shape'], ['What the team found', 'found'], ['What we recommend first', 'first'], ['Questions for you', 'questions']].forEach(([t, k]) => { const p = el('p', null, S[k] || 'The team did not report on this.'); p.style.whiteSpace = 'pre-wrap'; d.append(sec(t, p)); });
     P.append(d);
   }
+  const dec = el('div', 'ts-sec'); dec.id = 'ts-decisions'; dec.hidden = true; P.append(dec);
   if (pending.mode === 'meeting') { const rb = el('div', 'ts-sec'); rb.id = 'ts-readbox'; P.append(rb); renderReadBox(true); }
   P.append(filesBlock());
   const wf = el('div', 'ts-sec'); wf.id = 'ts-wf'; P.append(wf);
@@ -233,8 +246,9 @@ function renderKickoff(){
     : pending.mode === 'scratch' ? cmdRow([btn('btn next', 'START WORK', 'startWork'), btn('btn', 'BACK', 'back')])
     : cmdRow([btn('btn next', 'GET TO WORK', 'getToWork'), btn('btn', 'BRING IT UP TO OUR STANDARDS', 'bringUp'), btn('btn', 'JUST KEEP THE NOTES', 'keepNotes')]));
   P.append(el('p', 'note', pending.mode === 'meeting' ? 'GET TO WORK ON THIS gives the notes to the CEO, and changes still wait for your approval. LEAVE saves nothing. Nobody at this table starts work until you press a button.' : pending.mode === 'scratch' ? 'START WORK sends your description and these notes to the CEO, who runs setup in a new folder. Changes wait for your approval.' : 'BRING IT UP TO OUR STANDARDS may change settings on the project. It asks your approval first.'));
-  M.lines.forEach(addLog); renderHands(); showCard(M.current, true);
-  if (!M.started) { M.started = true; openMeeting(); } else { setBusy(M.busy); pump(); }
+  M.lines.forEach(addLog); showCard(M.current, true);
+  if (!M.started) { M.started = true; openMeeting(); } else pump();
+  syncMeeting(G.state()); renderNext();
   ta.focus();
 }
 /* Whether the people at the table know the project. Only redrawn when it changes, so it never takes your place in the text box. */
@@ -253,52 +267,71 @@ function renderReadBox(force){
 }
 function sourceText(){ return [pending.gh ? 'GitHub project ' + pending.gh : null, pending.folder ? 'the folder ' + pending.folder.name + ' on your computer' : null].filter(Boolean).join(' and '); }
 function title(k){ return k === 'you' ? 'You' : G.name(k); }
-function addLog(line){ const log = $('ts-log'); if (!log) return; const p = el('p', line.speaker === 'you' ? 'me' : (line.speaker === 'note' ? 'sys' : null)); if (line.speaker !== 'note') p.append(el('b', null, title(line.speaker) + ': ')); p.append(document.createTextNode(line.text)); log.append(p); log.scrollTop = log.scrollHeight; }
-function renderHands(){
-  const h = $('ts-hands'); G.hands(M.hands.map(x => x.speaker)); if (!h) return; h.textContent = '';
-  h.append(el('span', 'lab', 'HANDS UP'));
-  if (!M.hands.length) h.append(el('span', 'note', 'Nobody right now'));
-  M.hands.forEach(x => h.append(el('span', 'ts-chip', title(x.speaker))));
+/* What the helper says has happened. Lines wait here until they are worded for you, so they always appear in order. */
+function syncMeeting(s){
+  const mt = s.meeting; if (!mt || !M) return;
+  G.table(mt.team, mt.working);
+  while (M.seen < mt.lines.length && !mt.lines[M.seen].pending) {
+    const l = mt.lines[M.seen++];
+    if (M.catchUp || l.speaker === 'you') { M.lines.push(l); addLog(l); if (l.speaker === 'you') { M.current = l; showCard(l); } }
+    else enqueue([l]);
+  }
+  M.catchUp = false;
+  renderStatus(mt); renderDecisions(mt);
 }
+function renderStatus(mt){
+  const box = $('ts-status'); if (!box) return;
+  const ceo = G.name('ceo'), text = mt.asking.length ? ceo + ' is asking ' + mt.asking.map(k => G.name(k)).join(' and ') : mt.ceoBusy ? ceo + ' is working out who to ask' : 'Your turn';
+  if (box.textContent !== text) box.textContent = text;
+}
+function renderDecisions(mt){
+  const box = $('ts-decisions'); if (!box) return;
+  const heads = Object.keys(mt.lists).filter(k => mt.lists[k].length), sig = JSON.stringify([mt.decisions, mt.lists]);
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig; box.textContent = '';
+  box.hidden = !mt.decisions.length && !heads.length;
+  const list = (head, items) => { box.append(el('h3', null, head)); const u = el('ul', 'ts-notes'); items.forEach(x => u.append(el('li', null, x))); box.append(u); };
+  if (mt.decisions.length) list('DECISIONS SO FAR', mt.decisions);
+  heads.forEach(k => list('AFTER THE MEETING: ' + G.name(k).toUpperCase(), mt.lists[k]));
+}
+function addLog(line){ const log = $('ts-log'); if (!log) return; const p = el('p', line.speaker === 'you' ? 'me' : (line.speaker === 'note' ? 'sys' : null)); if (line.speaker !== 'note') p.append(el('b', null, title(line.speaker) + ': ')); p.append(document.createTextNode(line.text)); log.append(p); log.scrollTop = log.scrollHeight; }
 function showCard(line, instant){
   const card = $('ts-card'); if (!card) return;
   if (!line) { card.hidden = true; return; }
   card.hidden = false; const who = line.speaker === 'you' ? 'you' : line.speaker === 'note' ? 'ceo' : line.speaker;
   G.portrait($('ts-cface'), who, false);
-  $('ts-cname').textContent = line.thinking ? 'The team is thinking…' : title(line.speaker === 'note' ? 'ceo' : line.speaker);
+  $('ts-cname').textContent = title(line.speaker === 'note' ? 'ceo' : line.speaker);
   $('ts-ctext').textContent = line.text;
   if (!instant && !RM()) { card.classList.remove('pop'); void card.offsetWidth; card.classList.add('pop'); }
 }
-function setBusy(b){ M.busy = b; const s = $('ts-send'); if (s) s.disabled = b; if (b) showCard({ speaker: 'ceo', text: 'One moment…', thinking: true }); }
-function enqueue(lines){ lines.forEach(l => M.queue.push(l)); pump(); }
+function enqueue(lines){ lines.forEach(l => M.queue.push(l)); pump(); renderNext(); }
+/* One person at a time: a line stays up until you answer it or press NEXT. */
+function release(){ M.holding = false; pump(); renderNext(); }
+function renderNext(){
+  const b = $('ts-next'); if (!b || !M) return;
+  const n = M.queue.length;
+  b.textContent = n ? 'NEXT (' + n + ' more waiting)' : 'NEXT';
+  b.disabled = !M.speaking && !n;
+}
 function pump(){
-  if (!M || M.speaking || M.busy || screen !== 'kickoff') return;
+  if (!M || M.speaking || M.holding || screen !== 'kickoff') return;
   const line = M.queue.shift();
-  if (line) speak(line); else moderate();
+  if (line) speak(line);
 }
 function speak(line){
   M.speaking = true; M.current = line; M.lines.push(line); addLog(line);
   if (line.speaker !== 'you') G.talking(line.speaker);
   showCard(line); const ct = $('ts-ctext'); if (ct) delete ct.dataset.orig; const ver = $('ts-card') && $('ts-card').querySelector('.hl-ver'); if (ver) ver.textContent = '';
-  let i = 0, typer = 0, hold = 0;
-  const done = () => { clearInterval(typer); clearTimeout(hold); M.skip = null; if (ct && ct.isConnected && ct.dataset.orig == null) { ct.textContent = line.text; if (window.SDLCHelp) window.SDLCHelp.markTerms(ct); } G.talking(null); M.speaking = false; if (line.ask) { M.waitBoss = true; const ta = $('ts-sayin'); if (ta) ta.focus(); } pump(); };
-  const holdFor = () => { hold = setTimeout(done, Math.min(5000, 900 + line.text.length * 28)); };
+  let i = 0, typer = 0;
+  const done = () => { clearInterval(typer); M.skip = null; if (ct && ct.isConnected && ct.dataset.orig == null) { ct.textContent = line.text; if (window.SDLCHelp) window.SDLCHelp.markTerms(ct); } G.talking(null); M.speaking = false; M.holding = true; if (line.ask) { const ta = $('ts-sayin'); if (ta) ta.focus(); } renderNext(); };
   M.skip = done;
-  if (RM() || !ct) { holdFor(); return; }
+  renderNext();
+  if (RM() || !ct) { done(); return; }
   ct.textContent = ''; G.blip(300, 0.02);
-  typer = setInterval(() => { i += 2; ct.textContent = line.text.slice(0, i); if (i >= line.text.length) { clearInterval(typer); typer = 0; holdFor(); } }, 18);
-}
-function moderate(){
-  if (M.waitBoss) return;
-  if (M.hands.length) {
-    const h = M.hands.shift(); renderHands();
-    enqueue([{ speaker: 'ceo', text: title(h.speaker) + ', go ahead.' }, { speaker: h.speaker, text: h.question, ask: true }]);
-  } else if (!M.askedElse) {
-    M.askedElse = true; enqueue([{ speaker: 'ceo', text: 'Is there anything else you want to mention?', ask: true }]);
-  } else M.waitBoss = true;
+  typer = setInterval(() => { i += 2; ct.textContent = line.text.slice(0, i); if (i >= line.text.length) done(); }, 18);
 }
 function openMeeting(){
-  if (pending.mode === 'scratch') { quickTurn('open'); return; }
+  if (pending.mode === 'scratch') return; // the CEO session opens this one
   if (pending.mode === 'meeting') {
     const st = (G.state().reading || {}).status;
     M.reading = st === 'reading';
@@ -308,26 +341,13 @@ function openMeeting(){
   enqueue([{ speaker: 'ceo', text: 'The briefing is below. Ask anything, answer my questions, or pick what happens next.', ask: true }]);
 }
 TITLE_ACTIONS.sayToMeeting = text => {
-  text = String(text || '').trim(); if (!text || !M || M.busy) return;
+  text = String(text || '').trim(); if (!text || !M) return;
   const ta = $('ts-sayin'); if (ta) ta.value = '';
   if (M.skip) M.skip();
-  M.queue.forEach(l => { M.lines.push(l); addLog(l); }); M.queue = [];
-  const mine = { speaker: 'you', text: text }; M.lines.push(mine); addLog(mine); M.current = mine; showCard(mine);
-  M.waitBoss = false; M.askedElse = false;
-  quickTurn('said');
+  release();
+  G.api('/meeting-say', { project: pending.project, text: text }).then(r => { if (!r.ok) G.toast(r.message); });
 };
-function quickTurn(event){
-  const S = (G.state().study || {}).briefing || '';
-  setBusy(true);
-  const n = ++M.turn, m = M;
-  G.api('/quick', { kind: 'kickoff', mode: pending.mode, name: pending.name, what: pending.what || '', visibility: pending.visibility || '', briefing: S, team: ['ceo'].concat(TEAM[pending.mode]), transcript: M.lines.filter(l => l.speaker !== 'note').map(l => ({ speaker: l.speaker === 'you' ? 'BOSS' : l.speaker, text: l.text })), hands: M.hands, event: event }).then(res => {
-    if (M !== m || m.turn !== n) return;
-    setBusy(false);
-    if (!res.ok) { M.waitBoss = true; enqueue([{ speaker: 'note', text: res.message }]); return; }
-    M.hands = res.hands; renderHands(); enqueue(res.replies);
-  });
-}
-function stopMeeting(){ if (M && M.skip) { const s = M.skip; M.skip = null; s(); } M = null; G.hands([]); G.talking(null); }
+function stopMeeting(){ if (M && M.skip) { const s = M.skip; M.skip = null; s(); } M = null; G.talking(null); }
 function sec(title, body){ const s = el('div', 'ts-sec'); s.append(el('h3', null, title.toUpperCase())); if (body) s.append(body); return s; }
 function cmdRow(btns){ const r = el('div', 'row'); btns.forEach(b => r.append(b)); return r; }
 function filesBlock(){
@@ -350,7 +370,8 @@ function renderSlots(){
   const all = G.state().projects;
   if (!all.length) { const e = el('div', 'ts-empty'); e.append(el('p', null, 'No projects yet.'), el('p', 'note', 'Start one with New Game.'), btn('btn next', 'NEW GAME', 'newGame')); list.append(e); return; }
   all.forEach(p => {
-    const b = el('button', 'ts-slot'); b.type = 'button'; b.setAttribute('role', 'listitem'); b.dataset.act = 'loadProject'; b.dataset.arg = p.id; b.disabled = !!p.missing;
+    const row = el('div', 'ts-slotrow'); row.setAttribute('role', 'listitem');
+    const b = el('button', 'ts-slot'); b.type = 'button'; b.dataset.act = 'loadProject'; b.dataset.arg = p.id; b.disabled = !!p.missing;
     const job = p.missing ? 'The folder is missing: ' + p.folder : p.hasJob ? 'Job: ' + p.goal : 'No job yet';
     b.append(el('span', 'nm', p.name), p.current ? el('span', 'ts-badge', 'CURRENT') : el('span'));
     b.append(el('span', 'rp', p.folder), el('span', 'jb', job));
@@ -360,7 +381,10 @@ function renderSlots(){
     const pz = el('span'); pz.append(el('b', null, String(p.paused)), document.createTextNode(' paused'));
     stats.append(w, wk, pz, el('span', null, 'Last played: ' + whenText(p.lastPlayed))); b.append(stats);
     b.setAttribute('aria-label', p.name + '. ' + job + '. ' + p.waiting + ' waiting, ' + p.working + ' working, ' + p.paused + ' paused. Last played ' + whenText(p.lastPlayed) + '.');
-    list.append(b);
+    row.append(b);
+    if (slotAsk === p.id) { row.append(el('p', 'ts-say', 'Take ' + p.name + ' off this list? This only removes it from the game. Its folder, files and GitHub project stay as they are, and you can get it back with New Game, Take Over.')); row.append(cmdRow([btn('btn next', 'TAKE IT OFF THE LIST', 'removeYes', p.id), btn('btn', 'KEEP IT', 'removeNo')])); }
+    else row.append(cmdRow([btn('btn ts-slotoff', 'REMOVE', 'removeAsk', p.id)]));
+    list.append(row);
   });
 }
 

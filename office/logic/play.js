@@ -73,7 +73,7 @@ function canvasHit(ev){
   const ro = OBJS.find(o => o.rect && wx >= o.rect[0] && wx < o.rect[0] + o.rect[2] && wy >= o.rect[1] && wy < o.rect[1] + o.rect[3]);
   if (ro) return { o: ro };
   let hit = null, hb = -1;
-  ROSTER.forEach(k => { const e = ents[k]; const sx = e.px + (e.seated && !e.guest && !e.moving ? e.ox || 0 : 0), sy = e.py - 8; if (wx >= sx + 2 && wx <= sx + 14 && wy >= sy && wy <= sy + 24 && e.py > hb) { hb = e.py; hit = k; } });
+  ROSTER.forEach(k => { const e = ents[k]; if (e.gone) return; const sx = e.px + (e.seated && !e.guest && !e.moving ? e.ox || 0 : 0), sy = e.py - 8; if (wx >= sx + 2 && wx <= sx + 14 && wy >= sy && wy <= sy + 24 && e.py > hb) { hb = e.py; hit = k; } });
   if (hit) return { k: hit };
   const tx = Math.floor(wx / T), ty = Math.floor(wy / T), below = OBJAT[idx(tx, ty + 1)];
   const o = OBJAT[idx(tx, ty)] || (below && below.draw ? below : null);
@@ -86,14 +86,27 @@ cv.addEventListener('click', ev => {
   if (!h) return;
   if (h.o) { blip(520); useObj(h.o); } else goToChar(h.k);
 });
-cv.addEventListener('mousemove', ev => {
-  const h = uiBusy() ? null : canvasHit(ev); const s = hitTip(h);
-  cv.style.cursor = h ? 'pointer' : 'default';
+/* While a card or meeting is open, hovering still says who and what things are, but nothing can be clicked. */
+function lookTip(h){ if (!h) return ''; if (h.o) return h.o.label || h.o.tip; return fullNameOf(h.k); }
+function showTip(ev, s){
   if (!s) { tip.hidden = true; return; }
   tip.textContent = s; tip.hidden = false; const w = tip.offsetWidth;
   tip.style.left = Math.max(8, Math.min(innerWidth - w - 8, ev.clientX + 14)) + 'px'; tip.style.top = (ev.clientY + 16) + 'px';
+}
+cv.addEventListener('mousemove', ev => {
+  if (mapOpen || carrying) { cv.style.cursor = 'default'; tip.hidden = true; return; }
+  const h = canvasHit(ev), busy = uiBusy();
+  cv.style.cursor = h && !busy ? 'pointer' : 'default';
+  showTip(ev, busy ? lookTip(h) : hitTip(h));
 });
 cv.addEventListener('mouseleave', () => { tip.hidden = true; stampHover = false; });
+/* A meeting makes the office inert, so the game itself never sees the mouse. */
+window.addEventListener('mousemove', ev => {
+  const ts = document.getElementById('ts');
+  if (ts.hidden || !ts.classList.contains('dock')) return;
+  const b = cv.getBoundingClientRect(), over = ev.clientX >= b.left && ev.clientX < b.right && ev.clientY >= b.top && ev.clientY < b.bottom;
+  showTip(ev, over && !ts.contains(ev.target) ? lookTip(canvasHit(ev)) : '');
+});
 cv.addEventListener('mousemove', ev => { const b = cv.getBoundingClientRect(), sc = b.width / VW, wx = (ev.clientX - b.left) / sc + cam.x, wy = (ev.clientY - b.top) / sc + cam.y, X = (MYCHAIR.x - 2) * T, Y = (MYCHAIR.y + 1) * T; stampHover = !uiBusy() && wx >= X + 52 && wx < X + 64 && wy >= Y - 17 && wy < Y; });
 
 function targetAt(x, y){

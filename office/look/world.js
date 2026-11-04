@@ -99,6 +99,7 @@ const SLOTS = []; for (let i = 0; i < 8; i++) SLOTS.push({ x: 28 + i, y: 14 });
 const VISIT = { x: 28, y: 6 };
 const CONF_CEO = { x: 14, y: 18 }, CONF_YOU = { x: 14, y: 26 };
 const CONF_SEATS = []; for (let i = 0; i < 6; i++) { CONF_SEATS.push({ x: 12, y: 20 + i, face: 'right' }); CONF_SEATS.push({ x: 16, y: 20 + i, face: 'left' }); }
+const CONF_FIRST = [2, 3, 8, 9]; // second and fifth chairs on each side, so the people who start a meeting are spread out
 const MYCHAIR = { x: 28, y: 4 };
 const ROSTER = DATA.roles.map(r => r.key).concat(['rev1', 'rev2']);
 const NAMES = { ceo: 'Max Agenda', cto: 'Morgan Merge', architect: 'Lloyd Plans', engineer: 'Rusty Patch', qa: 'Dee Bugg', security: 'Ward Shield', release: 'Skye Launch', cmo: 'Mira Hype', 'brand-designer': 'Pablo Hue', writer: 'Paige Turner', community: 'Faye Kew', clo: 'Justine Case', compliance: 'Connie Form', privacy: 'Anne Onymous', ip: 'Pat Ent', cpo: 'Skip Roadmap', pm: 'Tess Ticket', analyst: 'Annie Lytics', 'product-designer': 'Wanda Frame', rev1: 'Nick Pick', rev2: 'Penn Redd' };

@@ -52,9 +52,59 @@ function removeEntry(e){
 const ents = {};
 function seatSpot(k){ const s = SEATS[k]; return { x: s.x, y: s.y, face: 'down', seated: true, ox: s.ox }; }
 let convo = null; // {key, mode:'visit'|'here', opened}
-let KICK = null, HANDS = [];
+/* The conference table. KICK holds who has each chair. Real people have sessions; fillers are only there to make the table look full. */
+let KICK = null, TABLE_REAL = [], TABLE_WORK = [], FILLER_OUT = null, FILLER_NEXT = 0;
+const rnd = (a, b) => a + Math.random() * (b - a);
+function freeToFill(k){ return k !== 'ceo' && !TABLE_REAL.includes(k) && !KICK.includes(k) && !hasSession(k) && listOf(k) !== 'working' && !queue().some(g => g.key === k); }
+function tableOpen(team){
+  TABLE_REAL = team.filter(k => k !== 'ceo'); KICK = new Array(CONF_SEATS.length).fill(null); FILLER_OUT = null; FILLER_NEXT = performance.now() + rnd(60000, 120000);
+  TABLE_REAL.forEach((k, i) => { const free = CONF_FIRST[i] != null ? CONF_FIRST[i] : KICK.indexOf(null); KICK[free] = k; });
+  ROSTER.filter(k => freeToFill(k)).sort(() => Math.random() - 0.5).forEach(k => { const free = KICK.indexOf(null); if (free >= 0) KICK[free] = k; });
+}
+/* Someone spoken to or called in becomes real: a filler keeps their chair, anyone else takes a free one or a filler's. */
+function tableSync(team, working){
+  if (!KICK) return;
+  TABLE_WORK = working || [];
+  team.filter(k => k !== 'ceo' && !TABLE_REAL.includes(k)).forEach(k => {
+    TABLE_REAL.push(k);
+    if (FILLER_OUT && FILLER_OUT.key === k) FILLER_OUT = null;
+    if (KICK.includes(k)) return;
+    let at = KICK.indexOf(null);
+    if (at < 0) { const fillers = KICK.filter(x => !TABLE_REAL.includes(x)); const gone = fillers[Math.floor(Math.random() * fillers.length)]; at = KICK.indexOf(gone); if (FILLER_OUT && FILLER_OUT.key === gone) FILLER_OUT = null; }
+    if (at >= 0) KICK[at] = k;
+  });
+}
+/* Fillers come and go, one at a time. A filler who gets real work leaves the chair for good. */
+function tableTick(now){
+  if (!KICK) return;
+  KICK.forEach((k, i) => { if (k && !TABLE_REAL.includes(k) && (hasSession(k) || listOf(k) === 'working' || queue().some(g => g.key === k))) { KICK[i] = null; if (FILLER_OUT && FILLER_OUT.key === k) FILLER_OUT = null; } });
+  if (FILLER_OUT) {
+    const e = ents[FILLER_OUT.key], s = SEATS[FILLER_OUT.key];
+    if (!FILLER_OUT.backAt && !e.moving && s && e.tx === s.x && e.ty === s.y) FILLER_OUT.backAt = now + rnd(20000, 40000);
+    if (FILLER_OUT.backAt && now >= FILLER_OUT.backAt) { FILLER_OUT = null; FILLER_NEXT = now + rnd(60000, 120000); }
+  } else if (now >= FILLER_NEXT) {
+    const seated = KICK.filter(k => k && !TABLE_REAL.includes(k) && SEATS[k]);
+    if (seated.length) FILLER_OUT = { key: seated[Math.floor(Math.random() * seated.length)], backAt: 0 };
+    else FILLER_NEXT = now + rnd(60000, 120000);
+  }
+}
+/* Closing the office: everyone walks out the right side. Whoever is still working stays at their desk until they finish, and someone waiting on your approval still comes to you. */
+let LEAVING = false, LEAVE_ALL = false;
+const OFFICE_EXIT = { x: 62, y: 22, face: 'right', exit: true };
+function leaveSpot(k){
+  if (LEAVE_ALL) return OFFICE_EXIT;
+  if (convo && convo.key === k) return null;
+  const c = readState().closing, w = c ? c.remaining.find(x => x.role === k) : null;
+  if (w && w.held) return null;
+  return w || (!c && listOf(k) === 'working') ? seatSpot(k) : OFFICE_EXIT;
+}
+function walkOutThen(done){
+  LEAVING = true; LEAVE_ALL = true;
+  const t0 = performance.now(), wait = setInterval(() => { if (ROSTER.every(k => ents[k].gone) || performance.now() - t0 > 25000) { clearInterval(wait); done(); } }, 200);
+}
 function desiredSpot(k){
-  if (KICK) { if (k === 'ceo') return { x: CONF_CEO.x, y: CONF_CEO.y, face: 'down' }; const ki = KICK.indexOf(k); if (ki >= 0 && ki < CONF_SEATS.length) { const c = CONF_SEATS[ki]; return { x: c.x, y: c.y, face: c.face, seated: true, guest: true, ox: 0 }; } }
+  if (LEAVING) { const sp = leaveSpot(k); if (sp) return sp; }
+  if (KICK && !(FILLER_OUT && FILLER_OUT.key === k)) { if (k === 'ceo') return { x: CONF_CEO.x, y: CONF_CEO.y, face: 'down' }; const ki = KICK.indexOf(k); if (ki >= 0 && ki < CONF_SEATS.length) { const c = CONF_SEATS[ki]; return { x: c.x, y: c.y, face: c.face, seated: true, guest: true, ox: 0 }; } }
   if (k === 'rev1' || k === 'rev2') return seatSpot(k);
   if (convo && convo.key === k) { if (convo.mode === 'visit') return { x: VISIT.x, y: VISIT.y, face: 'up' }; return { hold: true }; }
   const q = queue(); const i = q.findIndex(g => g.key === k);
@@ -83,10 +133,10 @@ function updateEnt(e, dt){
   if (e.moving) { advance(e, dt); return; }
   const sp = desiredSpot(e.key);
   if (sp.hold) return;
-  if (e.tx === sp.x && e.ty === sp.y) { e.dir = sp.face; e.seated = !!sp.seated; e.guest = !!sp.guest; e.ox = sp.ox || 0; e.path = null; return; }
+  if (e.tx === sp.x && e.ty === sp.y) { e.dir = sp.face; e.seated = !!sp.seated; e.guest = !!sp.guest; e.ox = sp.ox || 0; e.path = null; e.gone = !!sp.exit; return; }
   const gk = sp.x + ',' + sp.y;
   if (e.goal !== gk || !e.path) { e.goal = gk; e.path = bfs(e.tx, e.ty, sp.x, sp.y, walkable); if (!e.path) { e.px = sp.x * T; e.py = sp.y * T; e.tx = sp.x; e.ty = sp.y; return; } }
-  e.speed = (convo && convo.key === e.key && convo.mode === 'visit') ? 8 : 4;
+  e.speed = (convo && convo.key === e.key && convo.mode === 'visit') || LEAVING ? 8 : 4;
   const n = e.path.shift(); if (n) startMove(e, n[0], n[1]);
 }
 function entTile(e){ return e.moving ? [Math.round(e.px / T), Math.round(e.py / T)] : [e.tx, e.ty]; }

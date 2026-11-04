@@ -47,7 +47,7 @@ function connect(){
   es.addEventListener('state', ev => applyState(JSON.parse(ev.data)));
   es.addEventListener('log', ev => addLog(JSON.parse(ev.data)));
   es.onerror = () => {
-    if (closedByYou || STATE.closing) { if (es) es.close(); goOffline('OFFICE CLOSED', 'The office is closed and every session has stopped. You can close this tab.'); return; }
+    if (closedByYou || STATE.closing) { if (es) es.close(); walkOutThen(() => goOffline('OFFICE CLOSED', 'The office is closed and every session has stopped. You can close this tab.')); return; }
     if (es.readyState === 2) goOffline('OLD ADDRESS', 'This page was opened from an earlier start of the office, so the helper refused it.\n\nClose this tab and use the one that Start Office opened, or start it again. ' + START_HELP);
     else goOffline('NOT CONNECTED', 'The office helper has stopped, or its window was closed.\n\n' + START_HELP);
   };

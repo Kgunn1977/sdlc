@@ -36,7 +36,7 @@ const HELP_DATA = {
     acceptance: 'Approving says the job is done to your satisfaction. Deny sends it back for another try.',
     fit: 'You asked someone who isn’t the best fit. Sending it to the better fit is usually right.',
     role: 'Give jobs in plain words. The team turns them into a command for you.',
-    meeting: 'This is the team getting to know your project. Short answers are fine. Raised hands are questions waiting their turn.',
+    meeting: 'This meeting plans the work and does none of it. Say what you want. The CEO sends it to the right person, and they answer you. Use a name to talk to someone directly.',
     office: 'People waiting in the hall need you. Click one to call them in, or press Next.'
   }
 };
