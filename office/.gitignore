@@ -1,0 +1,7 @@
+# What the office writes while it runs, and the installed browser tool
+/browser-tool/node_modules/
+/office-log.txt
+/player.json
+/projects.json
+/sessions.json
+/sessions.json.tmp

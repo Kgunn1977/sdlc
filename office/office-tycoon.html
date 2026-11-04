@@ -1,0 +1,196 @@
+﻿<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>SDLC Office 32</title>
+<meta name="referrer" content="no-referrer">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=VT323&display=swap">
+<link rel="stylesheet" href="look/office.css">
+
+<main id="app">
+  <div id="frame">
+    <div id="hud" class="win" aria-live="polite">
+      <div class="hud-goal"><span class="lbl">PROJECT</span><span id="hud-proj"></span></div>
+      <div class="hud-goal"><span class="lbl">JOB</span><span id="hud-goal"></span></div>
+      <div class="hud-row"><span id="hud-repo"></span><button id="hud-others" class="chip" type="button" hidden></button><button id="hud-gh" class="chip" type="button" hidden></button></div>
+      <div class="hud-row"><span id="hud-open"></span><button id="hud-th" class="chip" type="button"></button><span id="hud-status"></span></div>
+    </div>
+    <canvas id="game" width="320" height="240" aria-label="The office. Use the arrow keys to walk, E to talk, M for the map."></canvas>
+    <canvas id="mini" aria-label="Minimap. Click a dot to go to that person, or press M for the full map."></canvas>
+    <div id="bottom">
+      <div id="prompt" class="win" hidden></div>
+      <div id="bar">
+        <button class="btn next" id="b-next" type="button">Next</button>
+        <button class="btn" id="b-map" type="button">Map (M)</button>
+        <button class="btn" id="b-sound" type="button" aria-pressed="false">Sound off</button>
+        <button class="btn" id="b-shirt" type="button">Shirt</button>
+        <button class="btn" id="b-help" type="button">Help</button>
+        <button class="btn" id="b-close" type="button">Close Office</button>
+        <button class="btn" id="b-menu" type="button">Main menu</button>
+        <button class="btn" id="b-settings" type="button">Settings</button>
+      </div>
+    </div>
+  </div>
+  <div id="pad" aria-hidden="true">
+    <div class="dpad"><button class="u" data-d="up">&#9650;</button><button class="l" data-d="left">&#9664;</button><button class="r" data-d="right">&#9654;</button><button class="d" data-d="down">&#9660;</button></div>
+    <div class="ab"><button class="b" id="pad-b">B</button><button class="a" id="pad-a">A</button></div>
+  </div>
+</main>
+
+<div id="dlg" class="win" role="dialog" aria-modal="true" aria-labelledby="dlg-name" hidden>
+  <div class="dlg-head">
+    <canvas id="dlg-face" width="192" height="192" aria-hidden="true"></canvas>
+    <div style="min-width:0"><div id="dlg-name" class="dname"></div><div id="dlg-sub" class="dsub"></div></div>
+    <button id="dlg-x" class="xbtn" type="button" aria-label="Close">X</button>
+  </div>
+  <p id="dlg-text" class="dtext"></p>
+  <div id="dlg-body"></div>
+</div>
+
+<div id="map" role="dialog" aria-modal="true" aria-label="Office map" hidden>
+  <div class="map-top"><h2>OFFICE MAP</h2><button class="btn" id="map-x" type="button">Close (M)</button></div>
+  <div class="map-wrap">
+    <canvas id="bigmap" aria-label="Full office map. Click a person or a room."></canvas>
+    <div id="roster" class="win" role="list" aria-label="Everyone in the office, waiting first"></div>
+  </div>
+</div>
+<div id="tip" class="win" hidden></div>
+<div id="toast" class="win" role="status" hidden></div>
+<div id="fade"></div>
+<div id="closing" class="win" role="status" hidden><h2>CLOSING THE OFFICE</h2><p id="closing-text"></p><p id="closing-held" class="note"></p><div class="row"><button class="btn" id="b-closenow" type="button">Close now</button></div><p class="note">Close now does not wait, so work could stop in the middle of a step.</p></div>
+<div id="offline" class="win" role="alert" hidden><h2 id="offline-head"></h2><p id="offline-text"></p></div>
+
+<script src="logic/plugin-data.js"></script>
+<script src="logic/connection.js"></script>
+<script src="look/world.js"></script>
+<script src="logic/people.js"></script>
+<script src="look/art.js"></script>
+<script src="logic/play.js"></script>
+<script src="look/headshots.js"></script>
+<script src="logic/conversations.js"></script>
+<script src="logic/hud.js"></script>
+
+<!-- ===================== HELP LAYER (start) =====================
+     Level, plain-word explanations, "Explain that again" and the mentor. Self-contained like the title screens.
+     Local tables live in HELP_DATA. Every button goes through one function in HELP_ACTIONS.
+     Exposes window.SDLCHelp for the game and the title screens. -->
+
+<aside id="hl-mentor" class="win" aria-live="polite" hidden>
+  <canvas id="hl-owl" width="28" height="28" aria-hidden="true"></canvas>
+  <div style="min-width:0">
+    <div class="who">MENTOR</div>
+    <p id="hl-say"></p>
+    <div class="hl-explain"><button class="hl-small" type="button" data-hl="hideMentor">Got it</button><button class="hl-small" type="button" data-hl="mentorOff">Turn the mentor off</button></div>
+  </div>
+</aside>
+
+<script src="logic/help.js"></script>
+<!-- ===================== HELP LAYER (end) ===================== -->
+
+<!-- ===================== TITLE SCREENS (start) =====================
+     Self-contained: its own styles, markup and script. Talks to the game only through window.SDLC
+     (defined at the end of the game script) and exposes window.SDLCTitle for the game to call.
+     Every button goes through one function in TITLE_ACTIONS. Project data comes from the helper. -->
+
+<section id="ts" aria-label="Software Tycoon">
+  <canvas id="ts-sky" width="480" height="270" aria-hidden="true"></canvas>
+  <div class="ts-shade" aria-hidden="true"></div>
+
+  <div class="ts-screen" id="ts-title">
+    <h1 class="ts-logo" aria-label="Software Tycoon"><span class="l1" data-text="SOFTWARE" aria-hidden="true">SOFTWARE</span><span class="l2" data-text="TYCOON" aria-hidden="true">TYCOON</span></h1>
+    <p class="ts-tag">Build it. Ship it. Run the company.</p>
+    <p class="ts-press" id="ts-press">PRESS START</p>
+    <nav class="ts-menu" id="ts-menu" aria-label="Main menu" hidden>
+      <button class="ts-item sel" type="button" data-act="newGame">NEW GAME</button>
+      <button class="ts-item" type="button" data-act="loadGame">LOAD GAME</button>
+    </nav>
+    <div class="ts-foot"><span id="ts-ver"></span><span>Press E or click</span></div>
+  </div>
+
+  <div class="ts-screen" id="ts-newchoice" hidden>
+    <div class="win ts-panel">
+      <h2 class="ts-h">NEW GAME</h2>
+      <div class="ts-sec"><h3>YOUR LEVEL</h3><div id="ts-levels"></div></div>
+      <div class="ts-choices">
+        <button class="ts-choice" type="button" data-act="chooseScratch"><span class="t">START FROM SCRATCH</span><span class="d">Found a new company around a new idea.</span></button>
+        <button class="ts-choice" type="button" data-act="chooseTakeover"><span class="t">TAKE OVER A PROJECT</span><span class="d">Put the team on a project that already exists on GitHub or on your computer.</span></button>
+      </div>
+      <div class="row"><button class="btn" type="button" data-act="back">BACK</button></div>
+    </div>
+  </div>
+
+  <div class="ts-screen" id="ts-new" hidden>
+    <div class="win ts-panel">
+      <div class="ts-welcome"><canvas class="ts-face" id="ts-face" width="192" height="192" aria-hidden="true"></canvas>
+        <div><div class="dname">CEO</div><p class="ts-say">Welcome, boss. Fill in the founding papers and I'll get the team moving.</p></div></div>
+      <form class="ts-paper" id="ts-form" novalidate>
+        <div class="ts-seal" aria-hidden="true">EST.<br>NOW</div>
+        <h3>FOUNDING PAPERS</h3>
+        <label for="ts-name">PROJECT NAME</label>
+        <input type="text" id="ts-name" maxlength="60" autocomplete="off" required>
+        <label for="ts-what">WHAT ARE YOU BUILDING? (ONE SENTENCE)</label>
+        <input type="text" id="ts-what" maxlength="160" autocomplete="off">
+        <fieldset><legend>WHO CAN SEE IT</legend>
+          <label class="ts-radio"><input type="radio" name="ts-vis" value="private" checked> Private</label>
+          <label class="ts-radio"><input type="radio" name="ts-vis" value="public"> Public</label>
+        </fieldset>
+        <p class="ts-err" id="ts-err" role="alert" hidden></p>
+      </form>
+      <div class="row"><button class="btn next" type="submit" form="ts-form">START</button><button class="btn" type="button" data-act="back">BACK</button></div>
+      <p class="note">START makes a new local folder for this project and opens the kickoff meeting. Nothing goes to GitHub until you approve it.</p>
+    </div>
+  </div>
+
+  <div class="ts-screen" id="ts-takeover" hidden>
+    <div class="win ts-panel">
+      <div class="ts-welcome"><canvas class="ts-face" id="ts-face2" width="192" height="192" aria-hidden="true"></canvas>
+        <div><div class="dname">CEO</div><p class="ts-say">Show me what we're taking over. A GitHub project, a folder on your computer, or both.</p></div></div>
+      <form class="ts-paper" id="ts-tform" novalidate>
+        <h3>TAKEOVER PAPERS</h3>
+        <label for="ts-gh">GITHUB PROJECT NAME (OWNER/REPO)</label>
+        <input type="text" id="ts-gh" maxlength="120" autocomplete="off" placeholder="owner/repo">
+        <span class="ts-flab" id="ts-flab">FOLDER ON YOUR COMPUTER</span>
+        <div class="row" role="group" aria-labelledby="ts-flab"><button class="btn" type="button" data-act="pickTakeoverFolder">Pick a folder</button><span class="ts-picked" id="ts-picked">No folder picked</span></div>
+        <p class="ts-err" id="ts-terr" role="alert" hidden></p>
+      </form>
+      <div class="row"><button class="btn next" type="submit" form="ts-tform">CONTINUE</button><button class="btn" type="button" data-act="back">BACK</button></div>
+      <p class="note">The Architect and Product Manager study it first and change nothing on GitHub. A folder must already be a git project.</p>
+    </div>
+  </div>
+
+  <div class="ts-screen" id="ts-kickoff" hidden>
+    <div class="win ts-panel wide" id="ts-kpanel"></div>
+  </div>
+
+  <div class="ts-screen" id="ts-studying" hidden>
+    <div class="win ts-panel" id="ts-spanel"></div>
+  </div>
+
+  <div class="ts-screen" id="ts-loadgame" hidden>
+    <div class="win ts-panel">
+      <div class="ts-headrow"><h2 class="ts-h">LOAD GAME</h2></div>
+      <div class="ts-list" id="ts-list" role="list" aria-label="Projects in the office"></div>
+      <div class="row"><button class="btn" type="button" data-act="back">BACK</button></div>
+    </div>
+  </div>
+
+  <div class="ts-screen" id="ts-files" hidden>
+    <div class="win ts-panel wide" id="ts-fpanel"></div>
+  </div>
+
+  <div class="ts-screen" id="ts-loading" hidden>
+    <div class="win ts-load" id="ts-loadbox" role="status" aria-live="polite" tabindex="-1">
+      <h2>CLOCKING IN...</h2>
+      <div class="ts-bar" aria-hidden="true"><i id="ts-bar"></i></div>
+      <p class="note" id="ts-loadname"></p>
+      <p class="note">Press E or click to skip</p>
+    </div>
+  </div>
+  <input type="file" id="ts-upload" multiple hidden>
+</section>
+
+<script src="logic/title.js"></script>
+<!-- ===================== TITLE SCREENS (end) ===================== -->
+
+
+</body></html>
