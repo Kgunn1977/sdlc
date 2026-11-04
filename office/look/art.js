@@ -383,14 +383,14 @@ function drawDesk(fu, now){
   if (bench) { box(ctx, X + w / 2 - 7, Y + 1, 14, 9, '#B8A0FF'); F(ctx, X + w / 2 - 4, Y + 3, 8, 5, '#5A3C2C'); F(ctx, X + w / 2 - 1, Y + 4, 2, 3, '#D8C870'); }
   drawPlate(ctx, X + w / 2, Y + 4, k);
   if (fu.kind === 'mine') {
-    box(ctx, X + 2, Y - 8, 12, 6, '#C8A070'); F(ctx, X + 4, Y - 10, 8, 3, '#FFFFFF'); F(ctx, X + 5, Y - 11, 7, 2, '#ECECF4'); F(ctx, X + 5, Y - 9, 6, 1, '#A8A8C0');
-    box(ctx, X + 35, Y - 11, 9, 9, '#9CA0B4'); for (let g = 0; g < 3; g++) F(ctx, X + 37, Y - 9 + g * 2, 3, 1, '#3A3C4C'); F(ctx, X + 41, Y - 9, 2, 2, '#48C848'); F(ctx, X + 41, Y - 9, 1, 1, '#B8FCB8'); F(ctx, X + 41, Y - 6, 2, 2, '#E8E8F0'); F(ctx, X + 34, Y - 3, 11, 1, 'rgba(12,6,24,0.3)');
-    F(ctx, X + 18, Y - 5, 12, 1, '#E0D8C8'); F(ctx, X + 18, Y - 4, 12, 1, '#B8B0A0');
+    box(ctx, X + 10, Y - 8, 12, 6, '#C8A070'); F(ctx, X + 12, Y - 10, 8, 3, '#FFFFFF'); F(ctx, X + 13, Y - 11, 7, 2, '#ECECF4'); F(ctx, X + 13, Y - 9, 6, 1, '#A8A8C0');
+    box(ctx, X + 66, Y - 11, 9, 9, '#9CA0B4'); for (let g = 0; g < 3; g++) F(ctx, X + 68, Y - 9 + g * 2, 3, 1, '#3A3C4C'); F(ctx, X + 72, Y - 9, 2, 2, '#48C848'); F(ctx, X + 72, Y - 9, 1, 1, '#B8FCB8'); F(ctx, X + 72, Y - 6, 2, 2, '#E8E8F0'); F(ctx, X + 65, Y - 3, 11, 1, 'rgba(12,6,24,0.3)');
+    F(ctx, X + 55, Y - 5, 8, 1, '#E0D8C8'); F(ctx, X + 55, Y - 4, 8, 1, '#B8B0A0');
     const since = now - stampUsedAt, down = !RM && since < 320;
-    F(ctx, X + 25, Y - 6, 4, 3, since < 1600 ? '#F03828' : '#B82418'); F(ctx, X + 26, Y - 5, 2, 1, since < 1600 ? '#FF8C70' : '#D84A38');
-    ctx.drawImage(down ? STAMP_DOWN : STAMP, X + 13, Y - 15 - (stampHover && !down ? 1 : 0));
-    if (stampHover && !down) { ctx.fillStyle = 'rgba(255,230,160,0.25)'; ctx.fillRect(X + 16, Y - 16, 10, 14); }
-    const n = unseenNotes(); if (n > 0) { hq({ t: 'badge', x: X + 13.5, y: Y - 11.5, n }); }
+    F(ctx, X + 62, Y - 6, 3, 3, since < 1600 ? '#F03828' : '#B82418'); F(ctx, X + 63, Y - 5, 1, 1, since < 1600 ? '#FF8C70' : '#D84A38');
+    ctx.drawImage(down ? STAMP_DOWN : STAMP, X + 48, Y - 15 - (stampHover && !down ? 1 : 0));
+    if (stampHover && !down) { ctx.fillStyle = 'rgba(255,230,160,0.25)'; ctx.fillRect(X + 51, Y - 16, 10, 14); }
+    const n = unseenNotes(); if (n > 0) { hq({ t: 'badge', x: X + 21.5, y: Y - 11.5, n }); }
     return;
   }
   const e = ents[k]; const st = k ? roleState(k) : 'idle';

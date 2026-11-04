@@ -7,8 +7,8 @@ const $ = id => document.getElementById(id);
 const ts = $('ts');
 const RM = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const LIMIT = 200 * 1024 * 1024;
-const TEAM = { scratch: ['cto', 'cpo', 'pm', 'architect'], takeover: ['architect', 'pm', 'cto', 'qa'] };
-let screen = 'title', attract = true, loadTimer = 0, loadDone = null, uid = 0, filesKey = null, filesFrom = null, drawerSel = 'uploads', tPick = null, drawers = [], errors = [], adding = [], readyToasted = false;
+const TEAM = { scratch: ['cto', 'cpo', 'pm', 'architect'], takeover: ['architect', 'pm', 'cto', 'qa'], meeting: ['cto', 'cmo', 'clo', 'cpo'] };
+let screen = 'title', attract = true, loadTimer = 0, loadDone = null, uid = 0, filesKey = null, filesFrom = null, drawerSel = 'uploads', tPick = null, drawers = [], errors = [], adding = [];
 let pending = null; // the project being started: { mode, project, name, what, visibility, gh, folder }
 $('ts-ver').textContent = 'v0.2';
 
@@ -34,7 +34,7 @@ const TITLE_ACTIONS = {
     const st = await G.api('/study', { project: r.project.id });
     if (!st.ok) { e.textContent = st.message; e.hidden = false; return; }
     pending = { mode: 'takeover', project: r.project.id, name: r.project.name, gh: r.project.repo || form.gh, folder: form.folder ? { name: form.folder.name } : null };
-    readyToasted = false; show('studying');
+    show('studying');
   },
   async startWork(){
     const box = $('ts-wf'); box.textContent = '';
@@ -69,11 +69,23 @@ const TITLE_ACTIONS = {
   async removeItem(drawerId, name){ const r = await G.api('/cabinet-remove', { project: filesKey, name: name }); if (!r.ok) errors.push({ id: 'e' + (++uid), name: name, reason: r.message }); await refreshFiles(); },
   async removeFolder(drawerId){ const d = drawers.find(x => x.id === drawerId); if (d) await G.api('/cabinet-unlink', { project: filesKey, folder: d.folder }); drawerSel = 'uploads'; await refreshFiles(); },
   dismissError(errId){ errors = errors.filter(e => e.id !== errId); refreshFiles(); },
-  leaveStudy(){ close(); G.toast('They keep studying. Main menu and Load Game bring you back to the briefing.'); },
+  callMeeting(){ const s = G.state(); if (!s.connected) { G.toast('The office is not connected.'); return; } G.closeUi(); pending = { mode: 'meeting', project: s.project.id, name: s.project.name, what: s.job.status === 'none' ? '' : 'What the team is working on now: ' + s.job.goal }; startKickoff(); },
+  meetingToWork(){ finishMeeting('work', 'Max Agenda has the notes and is getting the team moving.'); },
+  meetingNotes(){ finishMeeting('notes', 'The notes are in the file cabinet.'); },
+  leaveMeeting(){ endMeeting(); },
+  async readFiles(){
+    const r = await G.api('/read-files', { project: pending.project });
+    if (!r.ok) { G.toast(r.message); return; }
+    M.reading = true; G.state().reading = { status: 'reading' }; renderReadBox();
+    M.waitBoss = false; enqueue([{ speaker: 'ceo', text: 'Off they go. The team is reading everything now, and this can take a while. I will pick this up as soon as they are back.', ask: true }]);
+  },
+  answerCards(){ G.kickoff(null); close(); G.toast('The meeting comes back by itself when the team has finished reading.'); },
+  leaveStudy(){ close(); G.toast('They keep studying. The meeting opens by itself when the briefing is ready.'); },
   back(){ goBack(); }
 };
 function goBack(){
   if (screen === 'files') { TITLE_ACTIONS.closeFiles(); return; }
+  if (screen === 'kickoff' && pending && pending.mode === 'meeting') { endMeeting(); return; }
   const to = ({ newchoice: 'title', new: 'newchoice', takeover: 'newchoice', loadgame: 'title', studying: 'title', kickoff: pending && pending.mode === 'takeover' ? 'title' : 'new' })[screen];
   if (screen === 'kickoff') { stopMeeting(); G.kickoff(null); if (pending && pending.mode === 'scratch') G.api('/new-project-cancel', { project: pending.project }); pending = null; }
   if (to) show(to);
@@ -83,6 +95,12 @@ ts.addEventListener('click', ev => {
   const b = ev.target.closest('[data-act]'); if (!b || !ts.contains(b)) return;
   const a = b.dataset.act; if (TITLE_ACTIONS[a]) TITLE_ACTIONS[a](b.dataset.arg, b.dataset.arg2);
 });
+function endMeeting(notice){ stopMeeting(); pending = null; G.kickoff(null); close(); if (notice) G.toast(notice); }
+async function finishMeeting(choice, notice){
+  const r = await G.api('/meeting-finish', { project: pending.project, choice: choice, notes: notesOf() });
+  if (!r.ok) { G.toast(r.message); return; }
+  endMeeting(notice);
+}
 async function takeoverChoice(choice, notice){
   const r = await G.api('/takeover-finish', { project: pending.project, choice: choice, notes: notesOf() });
   if (!r.ok) { G.toast(r.message); return; }
@@ -156,10 +174,19 @@ let lastStudy = '';
 function tick(){
   const s = G.state();
   if (!ts.hidden && screen === 'loadgame') { const sig = JSON.stringify(s.projects.map(p => [p.id, p.waiting, p.working, p.paused, p.goal])); if (sig !== lastStudy) { lastStudy = sig; const f = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.arg : null; renderSlots(); if (f) { const b = $('ts-list').querySelector('[data-arg="' + CSS.escape(f) + '"]'); if (b) b.focus(); } } }
-  if (pending && pending.mode === 'takeover' && s.project.id === pending.project && s.study) {
-    if (s.study.status === 'ready' && screen === 'studying' && !ts.hidden) startKickoff();
-    else if (s.study.status === 'ready' && ts.hidden && !readyToasted) { readyToasted = true; G.toast('The CEO’s briefing is ready. Main menu, then Load Game.'); }
-    else if (!ts.hidden && screen === 'studying') renderStudying();
+  /* The meeting opens by itself once the briefing is ready, from the study screen or the office. It waits for a card or map you have open, and does not pull you out of the menus. */
+  if (s.study && s.study.status === 'ready' && (ts.hidden ? !G.busy() : screen === 'studying')) {
+    if (!pending || pending.project !== s.project.id) pending = { mode: 'takeover', project: s.project.id, name: s.project.name, gh: s.repo.name };
+    startKickoff();
+  } else if (pending && pending.mode === 'takeover' && s.project.id === pending.project && s.study && !ts.hidden && screen === 'studying') renderStudying();
+  if (pending && pending.mode === 'meeting' && M && s.project.id === pending.project) {
+    renderReadBox();
+    const st = (s.reading || {}).status;
+    if (M.reading && st !== 'reading' && (!ts.hidden || !G.busy())) {
+      M.reading = false;
+      if (ts.hidden) startKickoff();
+      M.waitBoss = false; enqueue([{ speaker: 'ceo', ask: true, text: st === 'done' ? 'The team is back and has read everything. What do you want to talk about?' : 'The team could not finish reading. Press Read project files to send them again.' }]);
+    }
   }
   const code = s.signin;
   if (code && screen === 'kickoff') { const c = $('ts-wfcode'); if (c && code.status !== 'waiting' && c.dataset.st !== code.status) { c.dataset.st = code.status; c.textContent = code.message; } }
@@ -169,7 +196,7 @@ function tick(){
 /* kickoff meeting, held in the office's Conference Room */
 function startKickoff(){
   G.kickoff(TEAM[pending.mode]);
-  show('kickoff');
+  open('kickoff');
   if (window.SDLCHelp) window.SDLCHelp.comment('meeting');
 }
 function el(tag, cls, text){ const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
@@ -179,7 +206,7 @@ let M = null;
 function renderKickoff(){
   const P = $('ts-kpanel'); P.textContent = '';
   if (!M || M.key !== pending.project) M = { key: pending.project, lines: [], queue: [], hands: [], busy: false, speaking: false, waitBoss: false, askedElse: false, started: false, current: null, turn: 0 };
-  const head = el('div', 'ts-headrow'); head.append(el('h2', 'ts-h', 'KICKOFF MEETING')); P.append(head);
+  const head = el('div', 'ts-headrow'); head.append(el('h2', 'ts-h', pending.mode === 'meeting' ? 'TEAM MEETING' : 'KICKOFF MEETING')); P.append(head);
   const card = el('div', 'ts-card'); card.id = 'ts-card'; const face = el('canvas', 'ts-face sm'); face.width = 144; face.height = 144; face.id = 'ts-cface'; face.setAttribute('aria-hidden', 'true');
   const cbody = el('div'); const cn = el('div', 'dname'); cn.id = 'ts-cname'; const ct = el('p', 'ts-say'); ct.id = 'ts-ctext'; cbody.append(cn, ct); if (window.SDLCHelp) cbody.append(window.SDLCHelp.explainControl(ct)); card.append(face, cbody);
   card.addEventListener('click', ev => { if (!ev.target.closest('button') && M.skip) M.skip(); });
@@ -199,14 +226,30 @@ function renderKickoff(){
     [['What this project is', 'what'], ['What shape it’s in', 'shape'], ['What the team found', 'found'], ['What we recommend first', 'first'], ['Questions for you', 'questions']].forEach(([t, k]) => { const p = el('p', null, S[k] || 'The team did not report on this.'); p.style.whiteSpace = 'pre-wrap'; d.append(sec(t, p)); });
     P.append(d);
   }
+  if (pending.mode === 'meeting') { const rb = el('div', 'ts-sec'); rb.id = 'ts-readbox'; P.append(rb); renderReadBox(true); }
   P.append(filesBlock());
   const wf = el('div', 'ts-sec'); wf.id = 'ts-wf'; P.append(wf);
-  P.append(pending.mode === 'scratch' ? cmdRow([btn('btn next', 'START WORK', 'startWork'), btn('btn', 'BACK', 'back')])
+  P.append(pending.mode === 'meeting' ? cmdRow([btn('btn next', 'GET TO WORK ON THIS', 'meetingToWork'), btn('btn', 'JUST KEEP THE NOTES', 'meetingNotes'), btn('btn', 'LEAVE', 'leaveMeeting')])
+    : pending.mode === 'scratch' ? cmdRow([btn('btn next', 'START WORK', 'startWork'), btn('btn', 'BACK', 'back')])
     : cmdRow([btn('btn next', 'GET TO WORK', 'getToWork'), btn('btn', 'BRING IT UP TO OUR STANDARDS', 'bringUp'), btn('btn', 'JUST KEEP THE NOTES', 'keepNotes')]));
-  P.append(el('p', 'note', pending.mode === 'scratch' ? 'START WORK sends your description and these notes to the CEO, who runs setup in a new folder. Changes wait for your approval.' : 'BRING IT UP TO OUR STANDARDS may change settings on the project. It asks your approval first.'));
+  P.append(el('p', 'note', pending.mode === 'meeting' ? 'GET TO WORK ON THIS gives the notes to the CEO, and changes still wait for your approval. LEAVE saves nothing. Nobody at this table starts work until you press a button.' : pending.mode === 'scratch' ? 'START WORK sends your description and these notes to the CEO, who runs setup in a new folder. Changes wait for your approval.' : 'BRING IT UP TO OUR STANDARDS may change settings on the project. It asks your approval first.'));
   M.lines.forEach(addLog); renderHands(); showCard(M.current, true);
   if (!M.started) { M.started = true; openMeeting(); } else { setBusy(M.busy); pump(); }
   ta.focus();
+}
+/* Whether the people at the table know the project. Only redrawn when it changes, so it never takes your place in the text box. */
+function renderReadBox(force){
+  const box = $('ts-readbox'); if (!box) return;
+  const s = G.state(), r = s.reading || { status: 'none' }, held = s.line.some(e => e.type === 'approval');
+  const sig = r.status + '|' + (r.at || '') + '|' + held;
+  if (!force && box.dataset.sig === sig) return;
+  box.dataset.sig = sig; box.textContent = '';
+  box.append(el('h3', null, 'THE PROJECT FILES'));
+  const words = { none: 'The team has not read this project’s files.', failed: 'The team could not finish reading. You can send them again.', reading: 'The team is reading everything now.', done: 'The team last read the files on ' + new Date(r.at || 0).toLocaleDateString() + '.' };
+  box.append(el('p', null, words[r.status] || words.none));
+  if (r.status === 'reading') {
+    if (held) { box.append(el('p', 'ts-say', 'Someone is waiting for your approval. They stop until you decide.')); box.append(cmdRow([btn('btn next', 'GO ANSWER THEM', 'answerCards')])); }
+  } else box.append(cmdRow([btn(r.status === 'done' ? 'btn' : 'btn next', 'READ PROJECT FILES', 'readFiles')]));
 }
 function sourceText(){ return [pending.gh ? 'GitHub project ' + pending.gh : null, pending.folder ? 'the folder ' + pending.folder.name + ' on your computer' : null].filter(Boolean).join(' and '); }
 function title(k){ return k === 'you' ? 'You' : G.name(k); }
@@ -256,6 +299,12 @@ function moderate(){
 }
 function openMeeting(){
   if (pending.mode === 'scratch') { quickTurn('open'); return; }
+  if (pending.mode === 'meeting') {
+    const st = (G.state().reading || {}).status;
+    M.reading = st === 'reading';
+    enqueue([{ speaker: 'ceo', ask: true, text: st === 'done' ? 'Everyone is here. What do you want to talk about?' : st === 'reading' ? 'The team is still reading the project files. I will pick this up as soon as they are back.' : 'Before we start: the team has not read this project’s files, so we would only be guessing. Press Read project files and they will go read everything.' }]);
+    return;
+  }
   enqueue([{ speaker: 'ceo', text: 'The briefing is below. Ask anything, answer my questions, or pick what happens next.', ask: true }]);
 }
 TITLE_ACTIONS.sayToMeeting = text => {
@@ -393,7 +442,7 @@ function clockIn(id, notice){
   loadDone = () => {
     clearTimeout(loadTimer); loadDone = null;
     const s = G.state();
-    if (s.study && s.project.id === id && !notice) { pending = { mode: 'takeover', project: id, name: s.project.name, gh: s.repo.name }; readyToasted = false; if (s.study.status === 'ready') startKickoff(); else show('studying'); return; }
+    if (s.study && s.project.id === id && !notice) { pending = { mode: 'takeover', project: id, name: s.project.name, gh: s.repo.name }; if (s.study.status === 'ready') startKickoff(); else show('studying'); return; }
     close(); if (notice) G.toast(notice); if (window.SDLCHelp) window.SDLCHelp.comment('office');
   };
   if (RM()) { bar.style.width = '100%'; loadTimer = setTimeout(() => loadDone && loadDone(), 400); }
@@ -449,7 +498,7 @@ drawSky();
 setInterval(() => { if (ts.hidden || ts.className || RM()) return; for (let i = 0; i < 4; i++) { const w = wins[(Math.random() * wins.length) | 0]; w.on = !w.on; } blink ^= 1; drawSky(); }, 450);
 
 /* game hooks */
-window.SDLCTitle = { openFiles: TITLE_ACTIONS.openFiles, mainMenu: TITLE_ACTIONS.mainMenu };
+window.SDLCTitle = { openFiles: TITLE_ACTIONS.openFiles, mainMenu: TITLE_ACTIONS.mainMenu, callMeeting: TITLE_ACTIONS.callMeeting };
 $('b-menu').addEventListener('click', TITLE_ACTIONS.mainMenu);
 open('title');
 })();

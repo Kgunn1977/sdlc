@@ -27,7 +27,7 @@ To add a drawer, type owner/repo in the cabinet and press Add drawer. If that pr
 - **Accept:** only sent when you click it.
 - **End this session:** everyone can work at once, and each person working uses your Claude usage. End a session when that person is done.
 - **Your office:** the red alarm stops work, the time clock picks stopped work back up, the elevator hands work off, and the rubber stamp on your desk accepts a whole job. The threshold dial sets what comes to you and what the team decides; it is one setting for all your projects.
-- **Conference room:** the blueprint table runs setup with the CEO. **Review Room:** runs expert review with the Architect, and you can set how many reviewers and rounds. These work in the current project.
+- **Conference room:** click the conference table to call a meeting with the CEO and the department heads. If the team has not read the project, the CEO says so, and Read project files sends the Architect and the Product Manager to read everything; what they find is what the table knows. No other work starts until you press Get to work on this. The blueprint table runs setup with the CEO. **Review Room:** runs expert review with the Architect, and you can set how many reviewers and rounds. These work in the current project.
 - **Ticket board:** shows everything in the project: its GitHub project board if it has one, every issue and pull request, and job tasks with no ticket. Click a ticket for its details.
 - **Settings:** your level, the mentor, what comes to you, what counts as yours, where legal work applies, team size and standing orders.
 - **On a card:** Open links show a file in another browser tab. Full explanation shows the words before they were put at your level.

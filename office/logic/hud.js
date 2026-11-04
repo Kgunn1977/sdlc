@@ -56,6 +56,7 @@ window.SDLC = {
   talking: k => { convo = k ? { key: k, mode: 'meeting' } : null; },
   refresh: () => refreshHud(),
   closeCard: () => { if (dlgOpen()) closeDialog(); },
+  busy: () => dlgOpen() || mapOpen,
   kickoff: members => {
     KICK = members ? members.slice() : null;
     if (!KICK) { HANDS = []; convo = null; return; }

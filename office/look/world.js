@@ -121,12 +121,12 @@ GUEST.forEach(g => { FURN.push({ type: 'chair', x: g.x, y: g.y, ox: 0, owner: nu
 CONF_SEATS.forEach(c => { FURN.push({ type: 'chair', x: c.x, y: c.y, ox: 0, owner: null, base: c.y * T + 15 }); block[idx(c.x, c.y)] = 2; });
 // your desk + chair
 FURN.push({ type: 'chair', x: MYCHAIR.x, y: MYCHAIR.y, ox: 0, owner: 'you', base: MYCHAIR.y * T + 15 }); block[idx(MYCHAIR.x, MYCHAIR.y)] = 2;
-FURN.push({ type: 'desk', x: MYCHAIR.x - 1, y: MYCHAIR.y + 1, w: 3, kind: 'mine', owner: 'you', base: (MYCHAIR.y + 1) * T + 16 }); blockRect(MYCHAIR.x - 1, MYCHAIR.y + 1, 3, 1);
+FURN.push({ type: 'desk', x: MYCHAIR.x - 2, y: MYCHAIR.y + 1, w: 5, kind: 'mine', owner: 'you', base: (MYCHAIR.y + 1) * T + 16 }); blockRect(MYCHAIR.x - 2, MYCHAIR.y + 1, 5, 1);
 const OBJS = [
-  { id: 'intray', tip: 'Inbox', tiles: [[27, 5]], label: 'Inbox', act: 'notes', rect: [432, 66, 16, 15] },
+  { id: 'intray', tip: 'Inbox', tiles: [[27, 5]], label: 'Inbox', act: 'notes', rect: [424, 66, 16, 15] },
   { id: 'mydesk', tiles: [[28, 5]], label: 'Your desk', act: 'next', noclick: true },
-  { id: 'intercom', tip: 'Call CEO', tiles: [[29, 5]], label: 'Intercom: call the CEO', act: 'intercom', rect: [466, 66, 11, 15] },
-  { id: 'stamp', tip: 'Rubber stamp', tiles: [[30, 5]], label: 'Rubber stamp: accept a whole job', act: 'stamp', rect: [447, 63, 12, 17] },
+  { id: 'intercom', tip: 'Call CEO', tiles: [[30, 5]], label: 'Intercom: call the CEO', act: 'intercom', rect: [481, 66, 11, 15] },
+  { id: 'stamp', tip: 'Rubber stamp', tiles: [[29, 5]], label: 'Rubber stamp: accept a whole job', act: 'stamp', rect: [468, 63, 12, 17] },
   { id: 'cabinet', tip: 'Choose project', tiles: [[33, 2]], label: 'File cabinet: choose project', act: 'projects', draw: 'cabinet', solid: true },
   { id: 'alarm', tip: 'Stop alarm', tiles: [[36, 2]], label: 'Red stop alarm', cmd: 'stop', draw: 'alarm', solid: true },
   { id: 'dial', tip: 'Threshold dial', tiles: [[21, 2]], label: 'Threshold dial', act: 'dial', draw: 'dial', solid: true },
@@ -135,6 +135,7 @@ const OBJS = [
   { id: 'clock', tip: 'Time clock', tiles: [[31, 2]], label: 'Time clock', cmd: 'resume', draw: 'clock', solid: true },
   { id: 'elevator', tip: 'Elevator', tiles: [[24, 2], [25, 2]], label: 'Elevator', cmd: 'transfer', draw: 'elevator', solid: true },
   { id: 'blueprint', tip: 'Blueprint table', tiles: [[10, 17], [11, 17]], label: 'Blueprint table', cmd: 'setup', draw: 'bptable', solid: true },
+  { id: 'ctable', tip: 'Call a meeting', tiles: [13, 14, 15].flatMap(x => [20, 21, 22, 23, 24, 25].map(y => [x, y])), label: 'Conference table: call a meeting', act: 'meeting' },
   { id: 'rdoor', tip: 'Review Room door', tiles: [[28, 28]], label: 'Review Room door', cmd: 'expert-review' },
   { id: 'rscreen', tip: 'Review screen', tiles: [[31, 16], [32, 16], [33, 16], [34, 16]], label: 'Review round screen', cmd: 'expert-review' },
   { id: 'cabinet', tip: 'Project files', tiles: [[33, 2]], label: 'File cabinet: project files', act: 'files', draw: 'cabinet', solid: true },

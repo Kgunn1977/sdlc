@@ -94,7 +94,7 @@ cv.addEventListener('mousemove', ev => {
   tip.style.left = Math.max(8, Math.min(innerWidth - w - 8, ev.clientX + 14)) + 'px'; tip.style.top = (ev.clientY + 16) + 'px';
 });
 cv.addEventListener('mouseleave', () => { tip.hidden = true; stampHover = false; });
-cv.addEventListener('mousemove', ev => { const b = cv.getBoundingClientRect(), sc = b.width / VW, wx = (ev.clientX - b.left) / sc + cam.x, wy = (ev.clientY - b.top) / sc + cam.y, X = (MYCHAIR.x - 1) * T, Y = (MYCHAIR.y + 1) * T; stampHover = !uiBusy() && wx >= X + 15 && wx < X + 27 && wy >= Y - 17 && wy < Y; });
+cv.addEventListener('mousemove', ev => { const b = cv.getBoundingClientRect(), sc = b.width / VW, wx = (ev.clientX - b.left) / sc + cam.x, wy = (ev.clientY - b.top) / sc + cam.y, X = (MYCHAIR.x - 2) * T, Y = (MYCHAIR.y + 1) * T; stampHover = !uiBusy() && wx >= X + 52 && wx < X + 64 && wy >= Y - 17 && wy < Y; });
 
 function targetAt(x, y){
   for (const k of ROSTER) { const [tx, ty] = entTile(ents[k]); if (tx === x && ty === y) return { char: k }; }
@@ -126,6 +126,7 @@ function useObj(o){
   else if (o.act === 'org') orgCard();
   else if (o.act === 'projects') projectsCard();
   else if (o.act === 'stamp') stampCard();
+  else if (o.act === 'meeting') { if (window.SDLCTitle) window.SDLCTitle.callMeeting(); }
   else if (o.cmd) cmdCard(o.cmd, o.label, o.id);
 }
 function promptText(){
