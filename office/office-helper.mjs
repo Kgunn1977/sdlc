@@ -49,9 +49,9 @@ export function normalizeRole(text) {
 }
 
 /* ================= Permission rule ================= */
-const AUTO_TOOLS = new Set(['Skill', 'Agent', 'Task', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskOutput', 'TaskStop', 'TaskUpdate', 'TodoWrite']);
+const AUTO_TOOLS = new Set(['Skill', 'Agent', 'Task', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskOutput', 'TaskStop', 'TaskUpdate', 'TodoWrite', 'WebSearch']);
 const READ_ROOT = join(homedir(), '.claude', 'plugins', 'cache', 'KnobanLabs');
-const RAW_BAN = ['>', '<', '`', '$', '\n', '\r'];
+const RAW_BAN = ['`', '$', '\n', '\r'];
 
 function realish(p) {
   let cur = resolve(p); const tail = [];
@@ -103,16 +103,22 @@ function tokenize(cmd) {
 function flagIn(rest, ...flags) { return rest.some(a => flags.some(f => a === f || (f.startsWith('--') && a.startsWith(f + '=')))); }
 
 function gitAllowed(t, ctx) {
-  let i = 1;
-  while (t[i] === '-C') { if (!insideRoots(t[i + 1], ctx)) return false; i += 2; }
+  let i = 1, from = ctx.cwd;
+  while (t[i] === '-C') { if (!insideRoots(t[i + 1], ctx)) return false; from = resolve(from, t[i + 1]); i += 2; }
   const sub = t[i], rest = t.slice(i + 1);
   if (!sub || sub.startsWith('-')) return false;
   if (rest.some(a => /^--(output|ext-diff|textconv|upload-pack|receive-pack|exec|config-env)\b/.test(a) || a.includes('ext::'))) return false;
   const positional = rest.filter(a => !a.startsWith('-'));
   switch (sub) {
     case 'status': case 'diff': case 'log': case 'show': case 'blame': case 'ls-tree': case 'add': case 'commit':
-    case 'rev-parse': case 'rev-list': case 'merge-base':
+    case 'rev-parse': case 'rev-list': case 'merge-base': case 'ls-files': case 'count-objects':
       return true;
+    case 'cat-file':
+      return !flagIn(rest, '--filters');
+    case 'grep':
+      // Git accepts shortened options here, and its pager option runs a program.
+      if (rest.some(a => /^-[a-zA-Z0-9]*O/.test(a) || /^--op/.test(a))) return false;
+      return readableArgs(rest, { ...ctx, cwd: from });
     case 'remote':
       return rest.every(a => a === '-v' || a === '--verbose');
     case 'ls-remote': case 'fetch':
@@ -152,6 +158,7 @@ function ghAllowed(t, ctx) {
   if (a === 'project' && (b === 'list' || b === 'view' || b === 'field-list' || b === 'item-list')) return true;
   if ((a === 'issue' || a === 'pr') && (b === 'list' || b === 'view')) return true;
   if (a === 'pr' && b === 'diff') return true;
+  if (a === 'repo' && b === 'list') return true;
   if (a === 'repo' && b === 'view') return !t[3] || t[3].startsWith('-') || t[3] === ctx.repoName;
   if (a === 'api' && b) return !rest.some(x => /^-[XfF]/.test(x) || /^--(method|field|raw-field|input)\b/.test(x));
   return false;
@@ -186,7 +193,7 @@ function readInside(p, ctx) {
 }
 
 // Keeps routine bookkeeping checkable. Pass the same guidance in every brief to subagents.
-const SESSION_GUIDE = 'This session runs under a strict command check, and the person approving anything it holds is not a programmer. Create and change files with the Write and Edit tools, including job files under ~/.sdlc, not with shell commands. Read files with the Read tool. Create folders with plain mkdir commands using literal paths. Do not use shell variables, redirections, printf or heredocs. The inbox threshold in the plugin still applies: a question below it you decide yourself and log, as the plugin says. Ask the human any question at or above it in plain words in your reply and wait for the answer; do not use the AskUserQuestion tool, because the office cannot show it. Speak to the person directly in the first person, as one colleague to another: say I and you, in every reply, question and inbox entry, never "the human" or "the user". They know who you are, so never introduce yourself. Ask only one question at a time, even when the plugin says to ask several together: ask the most important, wait for the answer, then ask the next. If an answer does not say which question it is for, it answers your first open question. When you want the person to look at a file, such as a screenshot or a design option, give its full path; the office turns it into a link they can open. Give every Bash command a description saying in plain words what it does and why; it appears on the approval card. The person works only inside the office game, so never ask them to run a terminal or slash command: if GitHub is signed out, tell them to use the GitHub sign-in button in the office, and to answer you when they have signed in. Include these instructions in every brief you give a subagent. This changes how you run commands only: every approval rule still applies, and approvals still come only from the human in this conversation.';
+const SESSION_GUIDE = 'This session runs under a strict command check, and the person approving anything it holds is not a programmer. Create and change files with the Write and Edit tools, including job files under ~/.sdlc, not with shell commands. Read files with the Read tool. Create folders with plain mkdir commands using literal paths. Do not use shell variables, redirections, printf or heredocs. Read-only Git and file commands, alone or joined by pipes, run without asking, so look at things that way. The inbox threshold in the plugin still applies: a question below it you decide yourself and log, as the plugin says. Ask the human any question at or above it in plain words in your reply and wait for the answer; do not use the AskUserQuestion tool, because the office cannot show it. Speak to the person directly in the first person, as one colleague to another: say I and you, in every reply, question and inbox entry, never "the human" or "the user". They know who you are, so never introduce yourself. Ask only one question at a time, even when the plugin says to ask several together: ask the most important, wait for the answer, then ask the next. If an answer does not say which question it is for, it answers your first open question. When you want the person to look at a file, such as a screenshot or a design option, give its full path; the office turns it into a link they can open. Give every Bash command a description saying in plain words what it does and why; it appears on the approval card. The person works only inside the office game, so never ask them to run a terminal or slash command: if GitHub is signed out, tell them to use the GitHub sign-in button in the office, and to answer you when they have signed in. Include these instructions in every brief you give a subagent. This changes how you run commands only: every approval rule still applies, and approvals still come only from the human in this conversation.';
 
 const READ_COMMANDS = new Set(['cat', 'head', 'tail', 'ls', 'wc', 'grep', 'sort', 'cut', 'pwd', 'stat', 'du', 'file', 'basename', 'dirname', 'echo', 'find']);
 function readCommandAllowed(t, ctx) {
@@ -195,14 +202,19 @@ function readCommandAllowed(t, ctx) {
   if (name === 'find' && args.some(a => /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/.test(a))) return false;
   if (name === 'sort' && args.some(a => /^-[a-zA-Z]*o/.test(a) || a.startsWith('--output') || a.startsWith('--compress-program'))) return false;
   if (name === 'tail' && args.some(a => /^-[a-zA-Z]*[fF]/.test(a) || a.startsWith('--follow'))) return false;
+  return readableArgs(args, ctx);
+}
+// Anything that could be a path has to be somewhere the session may read.
+function readableArgs(args, ctx) {
   return args.every(a => {
-    if (!/[\\/~]/.test(a) && a !== '..') return true;
+    if (!/[\\/~]|^[a-zA-Z]:/.test(a) && a !== '..') return true;
     return !a.startsWith('-') && readInside(a, ctx);
   });
 }
 
 function isToolCheck(t) {
   const s = t.join(' ');
+  if (t.length === 4 && s.startsWith('docker info --format ')) return true;
   return s === 'gh --version' || s === 'git --version' || s === 'docker --version' || s === 'docker info' || s === 'git config user.name' || s === 'git config user.email';
 }
 
@@ -233,6 +245,9 @@ export function commandAllowed(cmd, ctx) {
   if (typeof cmd !== 'string' || !cmd.trim()) return false;
   cmd = cmd.replace(/(^|\s)2>(&1|\s*\/dev\/null|\s*nul)(?=\s|$|;|\|)/gi, '$1');
   if (RAW_BAN.some(c => cmd.includes(c))) return false;
+  // A quote behind a backslash makes the shell and the split below disagree about where a command ends, which could hide a second command.
+  if (/\\["']/.test(cmd)) return false;
+  if (/[<>]/.test(cmd.replace(/"[^"]*"|'[^']*'/g, ''))) return false;
   const segments = splitCommands(cmd.trim());
   if (!segments || !segments.length) return false;
   let here = ctx;
@@ -302,11 +317,11 @@ export function newestPluginDir(home = homedir()) {
 }
 
 /* ================= The browser tool for looking at screens ================= */
-// The owner's decision: looking at a test copy on this computer runs on its own, anything on a real website asks.
-// local-browser cannot reach anything but this computer, which is enforced in the browser itself. web-browser reaches anywhere, and every step of it waits for a click.
+// The owner's decision: looking at a test copy on this computer runs on its own, and so does looking at a real website already open. Opening or doing anything on a real website asks.
+// local-browser cannot reach anything but this computer, which is enforced in the browser itself. web-browser reaches anywhere and is not signed in to anything.
 const BROWSER_BIN = join(HERE, 'browser-tool', 'node_modules', 'chrome-devtools-mcp', 'build', 'src', 'bin', 'chrome-devtools-mcp.js');
 const BROWSER_ROLES = new Set(['ceo', 'cto', 'architect', 'engineer', 'qa', 'security', 'release', 'cmo', 'brand-designer', 'writer', 'cpo', 'product-designer']);
-const BROWSER_NOTE = 'To look at something running on this computer, use the local-browser tools; they can reach only this computer and run without asking. To look at a real website, use the web-browser tools; each step waits for the person\'s click, so use them only when you must.';
+const BROWSER_NOTE = 'To look at something running on this computer, use the local-browser tools; they can reach only this computer and run without asking. To look at a real website, use the web-browser tools; looking at a page already open runs without asking, but opening a page or doing anything on it waits for the person\'s click, so use them only when you must.';
 export function browserConfig(bin = BROWSER_BIN) {
   const base = [bin, '--headless', '--isolated', '--usageStatistics=false', '--performanceCrux=false'];
   return { mcpServers: {
@@ -315,12 +330,16 @@ export function browserConfig(bin = BROWSER_BIN) {
   } };
 }
 const LOCAL_BROWSER_TOOLS = new Set(['click', 'close_page', 'drag', 'emulate', 'evaluate_script', 'fill', 'fill_form', 'get_console_message', 'get_css_styles', 'get_network_request', 'handle_dialog', 'hover', 'lighthouse_audit', 'list_console_messages', 'list_network_requests', 'list_pages', 'navigate_page', 'new_page', 'performance_analyze_insight', 'performance_start_trace', 'performance_stop_trace', 'press_key', 'resize_page', 'screencast_start', 'screencast_stop', 'select_page', 'take_heapsnapshot', 'take_screenshot', 'take_snapshot', 'type_text', 'wait_for']);
+const WEB_LOOK_TOOLS = new Set(['get_console_message', 'get_css_styles', 'get_network_request', 'list_console_messages', 'list_network_requests', 'list_pages', 'select_page', 'take_screenshot', 'take_snapshot', 'wait_for']);
 function localBrowserAllowed(name, input, ctx) {
   if (!LOCAL_BROWSER_TOOLS.has(name)) return false;
   if (input.url != null) {
     let u; try { u = new URL(String(input.url)); } catch { return false; }
     if (u.href !== 'about:blank' && !(/^https?:$/.test(u.protocol) && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(u.hostname))) return false;
   }
+  return browserFilesAllowed(input, ctx);
+}
+function browserFilesAllowed(input, ctx) {
   for (const k of ['filePath', 'outputDirPath', 'requestFilePath', 'responseFilePath']) if (input[k] != null && !writeAllowed(String(input[k]), ctx)) return false;
   return input.sourcePath == null || readAllowed('Read', { file_path: String(input.sourcePath) }, ctx);
 }
@@ -329,6 +348,7 @@ export function classify(tool, input, ctx) {
   input = input || {};
   if (AUTO_TOOLS.has(tool)) return true;
   if (String(tool).startsWith('mcp__local-browser__')) return localBrowserAllowed(tool.slice(20), input, ctx);
+  if (String(tool).startsWith('mcp__web-browser__')) return WEB_LOOK_TOOLS.has(tool.slice(18)) && browserFilesAllowed(input, ctx);
   if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') return readAllowed(tool, input, ctx);
   if (tool === 'Write' || tool === 'Edit') return writeAllowed(input.file_path, ctx);
   if (tool === 'Bash' || tool === 'PowerShell') return commandAllowed(input.command, ctx);
@@ -868,7 +888,7 @@ function main() {
   function startSession(p, role, jobText, from, meeting) {
     const browser = !meeting && BROWSER_ROLES.has(role) && existsSync(BROWSER_BIN);
     const proc = spawn(CLAUDE.match(/\.m?js$/i) ? process.execPath : CLAUDE,
-      [...(CLAUDE.match(/\.m?js$/i) ? [CLAUDE] : []), '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--permission-prompt-tool', 'stdio', ...(browser ? ['--mcp-config', JSON.stringify(browserConfig())] : []), '--append-system-prompt', SESSION_GUIDE + (browser ? ' ' + BROWSER_NOTE : '') + '\n\n' + officeNote(p), ...[materialsOf(p, HOME), ...p.connected].filter(d => existsSync(d)).flatMap(d => ['--add-dir', d]), ...(from ? ['--resume', from.sessionId] : []), ...pluginArgs(p), ...EXTRA],
+      [...(CLAUDE.match(/\.m?js$/i) ? [CLAUDE] : []), '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--permission-prompt-tool', 'stdio', '--disallowedTools', 'PowerShell', ...(browser ? ['--mcp-config', JSON.stringify(browserConfig())] : []), '--append-system-prompt', SESSION_GUIDE + (browser ? ' ' + BROWSER_NOTE : '') + '\n\n' + officeNote(p), ...[materialsOf(p, HOME), ...p.connected].filter(d => existsSync(d)).flatMap(d => ['--add-dir', d]), ...(from ? ['--resume', from.sessionId] : []), ...pluginArgs(p), ...EXTRA],
       { cwd: p.dir, env: CHILD_ENV, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const s = { told: officeNote(p), studying: false, briefing: false, meeting: !!meeting, key: meeting ? meetingKey(p, role) : sessionKey(p, role), project: p, role, proc, alive: true, status: 'starting', log: from ? from.log : [], unreported: [], report: from ? from.report : null, jobs: new Set(from ? from.jobs : []), jobText: jobText || (from ? from.jobText : '') || '', startedAt: Date.now(), expected: false, resultPending: false, lastText: '', stderr: '', quiet: null, pluginMissing: false, sessionId: from ? from.sessionId : null, initId: null, initSeen: false, resumeUnconfirmed: !!from, pending: [], paused: false, pauseNote: null, resumeFailed: false, resumeError: '', lastMsgAt: Date.now(), stopSentAt: 0, stopResult: false, forget: false };
     sessions.set(s.key, s);
