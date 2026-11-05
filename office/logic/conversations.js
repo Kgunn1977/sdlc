@@ -22,10 +22,11 @@ function callNext(){
   if (!q.length) { toast('No one is waiting in the line.'); return; }
   summon(q[0].key);
 }
-function openCards(k){
-  const g = queue().find(x => x.key === k);
-  if (!g) { endConvo(); return; }
-  const e = g.entries[0];
+/* The next card this person has for you, leaving out one you just answered that stays waiting. */
+function nextEntry(k, skip){ const g = queue().find(x => x.key === k); return g ? g.entries.find(x => x.id !== skip) || null : null; }
+function openCards(k, skip){
+  const e = nextEntry(k, skip);
+  if (!e) { endConvo(); return; }
   /* The character's words are still being written; the card opens when they arrive. */
   if (e.translating && e.source !== 'permission') {
     openDialog({ key: k, text: 'Give me a moment...', onClose: endConvo, build: body => {
@@ -40,11 +41,36 @@ function openCards(k){
   else if (e.type === 'report') reportCard(k, e);
   else if (e.type === 'paused') pausedCard(k, e);
 }
-function afterAnswer(k, msg){
+/* After you answer, the person stays at your desk while a quick reply comes back, so they do not walk off and straight back (the owner's decision, 2026-11-05). */
+const REPLY_WAIT = 10000;
+let replyWatch = null;
+function afterAnswer(k, msg, wait, skip){
   toast(msg);
   blip(990, 0.06);
-  if (queue().some(x => x.key === k)) { dlg.hidden = true; onDlgClose = null; openCards(k); return; }
+  if (nextEntry(k, skip)) { dlg.hidden = true; onDlgClose = null; openCards(k, skip); return; }
+  if (wait) { waitForReply(k, skip); return; }
   onDlgClose = null; dlg.hidden = true; endConvo();
+}
+function waitForReply(k, skip){
+  const until = Date.now() + REPLY_WAIT;
+  clearInterval(replyWatch);
+  openDialog({ key: k, text: 'Let me see...', onClose: () => { clearInterval(replyWatch); endConvo(); }, build: body => {
+    const mark = el('p', { class: 'note', text: 'If I have an answer in a few seconds, I will give it to you right here.' });
+    body.append(mark, el('div', { class: 'row' }, [stepBack(true)]));
+    clearInterval(replyWatch);
+    replyWatch = setInterval(() => {
+      if (!mark.isConnected) { clearInterval(replyWatch); return; }
+      if (nextEntry(k, skip)) { clearInterval(replyWatch); onDlgClose = null; dlg.hidden = true; openCards(k, skip); return; }
+      if (Date.now() >= until) { clearInterval(replyWatch); onDlgClose = null; leaveSaying(k); }
+    }, 300);
+  } });
+}
+function leaveSaying(k){
+  openDialog({ key: k, text: 'I will get right on that, and I will come back when I have something for you.', onClose: endConvo, build: body => {
+    const ok = el('button', { class: 'btn', type: 'button', 'data-autofocus': '', text: 'OK', onclick: () => closeDialog() });
+    body.append(el('div', { class: 'row' }, [ok]));
+    setTimeout(() => { if (ok.isConnected) closeDialog(); }, 2500);
+  } });
 }
 function stepBack(focusHere){ const b = el('button', { class: 'btn', type: 'button', text: 'Step back (Esc)', onclick: () => closeDialog() }); if (focusHere) b.setAttribute('data-autofocus', ''); return b; }
 function ownAnswerBox(label, send){
@@ -131,6 +157,11 @@ function approvalCard(k, e){
     } else {
       body.append(el('p', { class: 'note', text: 'I will not do anything until you click, and I will wait as long as you need.' }));
       body.append(el('div', { class: 'row' }, [el('button', Object.assign({ class: 'btn', type: 'button', text: 'Approve', onclick: () => decide('approve') }, e.translating ? { disabled: 'disabled' } : {})), el('button', { class: 'btn', type: 'button', text: 'Deny', onclick: () => decide('deny') })]));
+      // Typing an answer does not run the step; your words go to me instead.
+      body.append(...ownAnswerBox('Or tell me what to do instead', t => {
+        if (e.source === 'permission') act('/permission', { requestId: e.requestId, role: k, decision: 'deny', note: t }, k, e, 'Sent to ' + nameOf(k) + '. The step did not run.');
+        else act('/file-answer', { id: e.id, text: t }, k, e, 'Sent to ' + nameOf(e.owner || k) + '.');
+      }));
     }
     body.append(el('div', { class: 'row' }, [stepBack(true)]));
     /* The plain words arrive a moment after the card; Approve waits for them. */
@@ -143,7 +174,9 @@ function acceptanceCard(k, e){
     body.append(fieldList([['TASK', e.title], ['JOB', e.jobId], ['PULL REQUEST', e.pr || 'None found in the report']]));
     if (e.ownerAsleep) body.append(el('p', { class: 'note', text: e.owner === k ? 'I am not in a session right now. If you accept, I will reopen my earlier session and finish up.' : nameOf(e.owner) + ' is not in a session right now. If you accept, I will pass this on and they will reopen their earlier session.' }));
     if (e.owner) {
-      body.append(el('div', { class: 'row' }, [el('button', { class: 'btn', type: 'button', text: 'Accept', onclick: () => { stampUse(); act('/accept', { id: e.id }, k, e, 'Accepted ' + e.title + '.'); } })].concat(hasSession(e.owner) ? [replyBtn(e.owner)] : [])));
+      body.append(el('div', { class: 'row' }, [el('button', { class: 'btn', type: 'button', text: 'Accept', onclick: () => { stampUse(); act('/accept', { id: e.id }, k, e, 'Accepted ' + e.title + '.'); } })]));
+      // Words instead of Accept go to whoever did the work; the delivery keeps waiting for your Accept.
+      body.append(...ownAnswerBox('Or tell ' + (e.owner === k ? 'me' : nameOf(e.owner)) + ' what is not right yet', t => act('/send', { role: e.owner, text: t }, k, e, 'Sent to ' + nameOf(e.owner) + '. This stays waiting for your Accept.', { keep: true })));
       body.append(el('p', { class: 'note', text: (e.owner === k ? 'If you press Accept, I will get this message: ' : 'If you press Accept, ' + nameOf(e.owner) + ' will get this message: ') + e.acceptMessage }));
     } else body.append(el('p', { class: 'note', text: e.ownerReason }), cmdBox(e.copyCommand, 'Copy this').node);
     body.append(el('p', { class: 'note', text: DATA.rules.find(r => r.name === 'Acceptance').text }));
@@ -158,8 +191,12 @@ function reportCard(k, e){
     if (e.resumeFailed) {
       body.append(el('p', { class: 'note', text: 'If you press Start fresh, I will open a new session. I will not remember the earlier work, but I will get anything that was not delivered. Or you can copy this into Claude Code yourself.' }), cmdBox(e.copyCommand, 'Copy this').node);
       row.append(el('button', { class: 'btn', type: 'button', text: 'Start fresh', onclick: () => act('/fresh', { role: k, id: e.id }, k, e, nameOf(k) + ' has a new session.') }), forgetButton(k, e));
+      body.append(...ownAnswerBox('Or start me fresh with these words', t => act('/send', { role: k, text: t }, k, e, nameOf(k) + ' has a new session and your words.', { steps: [['/fresh', { role: k, id: e.id }]] })));
     }
-    else if (e.ended) row.append(el('button', { class: 'btn', type: 'button', 'data-autofocus': '', text: 'Got it', onclick: () => act('/dismiss', { role: k, id: e.id }, k, e, nameOf(k) + ' is back at their desk.') }));
+    else if (e.ended) {
+      row.append(el('button', { class: 'btn', type: 'button', 'data-autofocus': '', text: 'Got it', onclick: () => act('/dismiss', { role: k, id: e.id }, k, e, nameOf(k) + ' is back at their desk.') }));
+      body.append(...ownAnswerBox('Or tell me something', t => act('/dismiss', { role: k, id: e.id }, k, e, 'Sent to ' + nameOf(k) + '.', { steps: [['/send', { role: k, text: t }]] })));
+    }
     else {
       const answer = t => act('/answer', { role: k, id: e.id, text: t }, k, e, 'Sent to ' + nameOf(k) + '.');
       if (e.choices && e.choices.length) body.append(optButtons(e.choices.map(c => ({ label: c, fn: () => answer(c) }))));
@@ -196,6 +233,7 @@ function pausedCard(k, e){
     } }));
     row.append(forgetButton(k, e));
     body.append(row);
+    body.append(...ownAnswerBox('Or tell me what to do when I pick it back up', t => act('/continue', { role: k, text: t }, k, e, nameOf(k) + ' is picking the work back up with your words.')));
     body.append(el('p', { class: 'note', text: 'If you press End for good, I will drop my saved session. No project files get deleted.' }));
     body.append(el('div', { class: 'row' }, [stepBack(true)]));
   } });
@@ -213,9 +251,10 @@ function roleMenu(k, keepText){
       { label: 'Wrong person', fn: () => wrongView(k) }
     ].concat(live ? [{ label: 'See what I am doing', fn: () => transcriptView(k) }] : [])));
     if (!live && hasSaved(k)) body.append(el('p', { class: 'note', text: 'I have a saved session. If you give me a job, I will reopen it and remember the earlier work.' }));
+    body.append(...ownAnswerBox('Say something to me', t => act('/send', { role: k, text: t }, k, null, 'Sent to ' + nameOf(k) + '.')));
     const lg = legalLine(k); if (lg) body.append(lg);
     const row = el('div', { class: 'row' });
-    if (live) row.append(replyBtn(k), endSessionButton(k));
+    if (live) row.append(endSessionButton(k));
     else if (hasSaved(k)) row.append(forgetButton(k));
     row.append(el('button', { class: 'btn', type: 'button', text: 'Bye (Esc)', onclick: () => closeDialog() }));
     body.append(row);

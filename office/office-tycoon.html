@@ -15,13 +15,14 @@
       <div class="hud-row"><span id="hud-repo"></span><button id="hud-others" class="chip" type="button" hidden></button><button id="hud-gh" class="chip" type="button" hidden></button></div>
       <div class="hud-row"><span id="hud-open"></span><button id="hud-th" class="chip" type="button"></button><span id="hud-status"></span></div>
     </div>
-    <canvas id="game" width="320" height="240" aria-label="The office. Use the arrow keys to walk, E to talk, M for the map."></canvas>
+    <canvas id="game" width="320" height="240" aria-label="The office. Use the arrow keys to walk, E to talk, M for the map, C for the office complex."></canvas>
     <canvas id="mini" aria-label="Minimap. Click a dot to go to that person, or press M for the full map."></canvas>
     <div id="bottom">
       <div id="prompt" class="win" hidden></div>
       <div id="bar">
         <button class="btn next" id="b-next" type="button">Next</button>
         <button class="btn" id="b-map" type="button">Map (M)</button>
+        <button class="btn" id="b-complex" type="button">Complex (C)</button>
         <button class="btn" id="b-sound" type="button" aria-pressed="false">Sound off</button>
         <button class="btn" id="b-shirt" type="button">Shirt</button>
         <button class="btn" id="b-help" type="button">Help</button>
@@ -54,6 +55,13 @@
     <div id="roster" class="win" role="list" aria-label="Everyone in the office, waiting first"></div>
   </div>
 </div>
+<div id="complex" role="dialog" aria-modal="true" aria-label="Office complex" hidden>
+  <div class="map-top"><h2>OFFICE COMPLEX</h2><button class="btn" id="complex-x" type="button">Close (C)</button></div>
+  <div class="map-wrap">
+    <canvas id="complexmap" width="320" height="240" aria-label="The office complex. Each building is one project. Click one to work on it."></canvas>
+    <div id="complex-list" class="win" role="list" aria-label="Every project, by building"></div>
+  </div>
+</div>
 <div id="tip" class="win" hidden></div>
 <div id="toast" class="win" role="status" hidden></div>
 <div id="fade"></div>
@@ -65,10 +73,12 @@
 <script src="look/world.js"></script>
 <script src="logic/people.js"></script>
 <script src="look/art.js"></script>
+<script src="look/complex.js"></script>
 <script src="logic/play.js"></script>
 <script src="look/headshots.js"></script>
 <script src="logic/conversations.js"></script>
 <script src="logic/hud.js"></script>
+<script src="logic/complex.js"></script>
 
 <!-- ===================== HELP LAYER (start) =====================
      Level, plain-word explanations, "Explain that again" and the mentor. Self-contained like the title screens.

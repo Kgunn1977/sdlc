@@ -522,7 +522,7 @@ drawSky();
 setInterval(() => { if (ts.hidden || ts.className || RM()) return; for (let i = 0; i < 4; i++) { const w = wins[(Math.random() * wins.length) | 0]; w.on = !w.on; } blink ^= 1; drawSky(); }, 450);
 
 /* game hooks */
-window.SDLCTitle = { openFiles: TITLE_ACTIONS.openFiles, mainMenu: TITLE_ACTIONS.mainMenu, callMeeting: TITLE_ACTIONS.callMeeting };
+window.SDLCTitle = { openFiles: TITLE_ACTIONS.openFiles, mainMenu: TITLE_ACTIONS.mainMenu, callMeeting: TITLE_ACTIONS.callMeeting, newGame(){ TITLE_ACTIONS.mainMenu(); TITLE_ACTIONS.newGame(); } };
 $('b-menu').addEventListener('click', TITLE_ACTIONS.mainMenu);
 open('title');
 })();

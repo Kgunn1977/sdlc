@@ -64,13 +64,16 @@ function hasSaved(k){ return readState().saved.some(x => x.role === k); }
 function stillOpen(e){ return readState().line.some(x => x.id === e.id); }
 function inboxCmd(){ const id = readState().job.id; return '/sdlc:inbox' + (id ? ' ' + id : ''); }
 /* Sends one thing to the helper from a dialog. Buttons stay off until it answers; on success, the entry leaves the line. */
-async function act(path, body, k, e, msg){
+/* opt.keep leaves the entry waiting; opt.steps are earlier calls that must succeed first. */
+async function act(path, body, k, e, msg, opt){
+  opt = opt || {};
   if (e && !stillOpen(e)) { toast('That is no longer waiting.'); closeDialog(); return; }
   const ctl = Array.from(dlgBody.querySelectorAll('button, textarea'));
   ctl.forEach(c => { c.disabled = true; });
+  for (const [p, b] of opt.steps || []) { const r = await api(p, b); if (!r.ok) { toast(r.message); ctl.forEach(c => { c.disabled = false; }); return; } }
   const r = await api(path, body);
   if (!r.ok) { toast(r.message); ctl.forEach(c => { c.disabled = false; }); return; }
-  if (e) removeEntry(e);
-  afterAnswer(k, msg);
+  if (e && !opt.keep) removeEntry(e);
+  afterAnswer(k, msg, !/^\/(dismiss|forget)$/.test(path) || !!(opt.steps && opt.steps.length), opt.keep && e ? e.id : null);
 }
 

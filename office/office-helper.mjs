@@ -49,9 +49,8 @@ export function normalizeRole(text) {
 }
 
 /* ================= Permission rule ================= */
-const AUTO_TOOLS = new Set(['Skill', 'Agent', 'Task', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskOutput', 'TaskStop', 'TaskUpdate', 'TodoWrite', 'WebSearch']);
+const AUTO_TOOLS = new Set(['Skill', 'Agent', 'Task', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskOutput', 'TaskStop', 'TaskUpdate', 'TodoWrite', 'WebSearch', 'ToolSearch', 'BashOutput', 'KillShell', 'KillBash']);
 const READ_ROOT = join(homedir(), '.claude', 'plugins', 'cache', 'KnobanLabs');
-const RAW_BAN = ['`', '$', '\n', '\r'];
 
 function realish(p) {
   let cur = resolve(p); const tail = [];
@@ -68,11 +67,13 @@ function insideRoots(p, ctx) {
   if ((ctx.exclude || []).some(r => isUnder(abs, realish(r)))) return false;
   return ctx.roots.some(r => isUnder(abs, realish(r)));
 }
-function protectedPath(abs) {
+function protectedPath(abs, ctx) {
   const parts = abs.toLowerCase().split(/[\\/]+/);
   if (parts.includes('.git')) return true;
   const i = parts.lastIndexOf('.claude');
-  return i >= 0 && /^(settings(\.local)?\.json|hooks)$/.test(parts[i + 1] || '');
+  if (!(i >= 0 && /^(settings(\.local)?\.json|hooks)$/.test(parts[i + 1] || ''))) return false;
+  // Only the real project's safety checks wait for a click, not those in a throwaway copy (the owner's decision, 2026-11-05).
+  return !ctx.projectRoots || ctx.projectRoots.some(r => isUnder(realish(abs), realish(r)));
 }
 function readAllowed(tool, input, ctx) {
   const p = tool === 'Read' ? input.file_path : (input.path || ctx.cwd);
@@ -82,103 +83,214 @@ function readAllowed(tool, input, ctx) {
 function writeAllowed(p, ctx) {
   if (!p || typeof p !== 'string' || p.slice(2).includes(':')) return false;
   if ((ctx.noWrite || []).some(r => isUnder(realish(resolve(ctx.cwd, p)), realish(r)))) return false;
-  return insideRoots(p, ctx) && !protectedPath(resolve(ctx.cwd, p));
+  return insideRoots(p, ctx) && !protectedPath(resolve(ctx.cwd, p), ctx);
 }
 
-// Splits a single command into words. Returns null when anything outside quotes could start a second command or a sub-expression.
+// Splits a single command into words the way the shell does. Returns null when anything outside quotes could start a sub-expression or expand into several words.
 function tokenize(cmd) {
-  const out = []; let cur = '', quote = null, had = false;
-  for (const ch of cmd) {
+  const out = []; let cur = '', quote = null, had = false, bare = '';
+  const push = () => { if (/\{[^}]*(,|\.\.)[^}]*\}/.test(bare)) return false; out.push(cur); cur = ''; bare = ''; had = false; return true; };
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
     if (quote) { if (ch === quote) quote = null; else cur += ch; continue; }
     if (ch === '"' || ch === "'") { quote = ch; had = true; continue; }
-    if (/[(){}]/.test(ch)) return null;
-    if (/\s/.test(ch)) { if (cur || had) out.push(cur); cur = ''; had = false; continue; }
-    cur += ch;
+    if (ch === '\\' && i + 1 < cmd.length) { cur += cmd[++i]; had = true; continue; }
+    if (/[()]/.test(ch)) return null;
+    if (/\s/.test(ch)) { if ((cur || had) && !push()) return null; continue; }
+    cur += ch; bare += ch;
   }
   if (quote) return null;
-  if (cur || had) out.push(cur);
+  if ((cur || had) && !push()) return null;
   return out;
 }
 
-function flagIn(rest, ...flags) { return rest.some(a => flags.some(f => a === f || (f.startsWith('--') && a.startsWith(f + '=')))); }
+// Git and GNU tools accept a long option cut short, so --har means --hard.
+function longIn(rest, ...names) { return rest.some(a => { const k = a.split('=')[0]; return k.startsWith('--') && k.length >= 4 && names.some(n => n.startsWith(k)); }); }
+function shortIn(rest, re) { return rest.some(a => /^-[a-zA-Z0-9]/.test(a) && re.test(a.slice(1))); }
 
-function gitAllowed(t, ctx) {
-  let i = 1, from = ctx.cwd;
-  while (t[i] === '-C') { if (!insideRoots(t[i + 1], ctx)) return false; from = resolve(from, t[i + 1]); i += 2; }
-  const sub = t[i], rest = t.slice(i + 1);
-  if (!sub || sub.startsWith('-')) return false;
-  if (rest.some(a => /^--(output|ext-diff|textconv|upload-pack|receive-pack|exec|config-env)\b/.test(a) || a.includes('ext::'))) return false;
-  const positional = rest.filter(a => !a.startsWith('-'));
-  switch (sub) {
-    case 'status': case 'diff': case 'log': case 'show': case 'blame': case 'ls-tree': case 'add': case 'commit':
-    case 'rev-parse': case 'rev-list': case 'merge-base': case 'ls-files': case 'count-objects':
-      return true;
-    case 'cat-file':
-      return !flagIn(rest, '--filters');
-    case 'grep':
-      // Git accepts shortened options here, and its pager option runs a program.
-      if (rest.some(a => /^-[a-zA-Z0-9]*O/.test(a) || /^--op/.test(a))) return false;
-      return readableArgs(rest, { ...ctx, cwd: from });
-    case 'remote':
-      return rest.every(a => a === '-v' || a === '--verbose');
-    case 'ls-remote': case 'fetch':
-      if (flagIn(rest, '-p', '-P', '--prune', '--prune-tags', '-u', '--recurse-submodules', '--all', '--multiple', '--force', '-f')) return false;
-      return positional.every((a, n) => (n === 0 ? a === 'origin' : !/[:@]/.test(a)));
-    case 'branch':
-      return !flagIn(rest, '-d', '-D', '--delete', '-m', '-M', '--move', '-c', '-C', '--copy', '-f', '--force', '-u', '--set-upstream-to', '--unset-upstream', '--edit-description');
-    case 'switch':
-      return !flagIn(rest, '-f', '--force', '--discard-changes', '-C', '--force-create', '--orphan');
-    case 'checkout':
-      if (flagIn(rest, '-f', '--force', '-B', '--', '.', '--ours', '--theirs', '--orphan', '-p', '--patch', '-m', '--merge')) return false;
-      return !positional.some(a => existsSync(resolve(ctx.cwd, a)));
-    case 'worktree':
-      if (rest[0] === 'list') return true;
-      if (rest[0] !== 'add' || flagIn(rest, '-f', '--force', '-B')) return false;
-      {
-        const args = rest.slice(1); let path = null;
-        for (let n = 0; n < args.length; n++) { if (args[n] === '-b') { n++; continue; } if (!args[n].startsWith('-')) { path = args[n]; break; } }
-        return insideRoots(path, ctx);
-      }
-    default:
-      return false;
-  }
-}
+// The owner's decision (2026-11-05): a step runs on its own unless it is on a short list. Sending anything out, changing anything
+// outside the project and its work folders, deleting what is hard to get back, installing software, and editing the real
+// project's safety checks wait for a click. Scripts the session runs are not looked inside; the owner accepted that.
+// The list catches the plain forms of those steps; a determined script can still get past it.
+const SEND_OUT = ['curl', 'wget', 'ssh', 'scp', 'sftp', 'ftp', 'tftp', 'rsync', 'nc', 'ncat', 'netcat', 'telnet', 'plink', 'pscp', 'openssl', 'certutil', 'bitsadmin', 'twine', 'hatch', 'flit', 'vercel', 'netlify', 'firebase', 'heroku', 'flyctl', 'fly', 'az', 'aws', 'gcloud', 'gsutil', 'kubectl', 'terraform', 'explorer', 'open', 'xdg-open', 'start', 'msedge', 'chrome', 'firefox', 'iexplore', 'brave', 'opera'];
+const INSTALLERS = ['winget', 'choco', 'scoop', 'apt', 'apt-get', 'brew', 'dnf', 'yum', 'pacman', 'snap', 'pipx', 'npx', 'bunx', 'pnpx', 'uvx', 'corepack', 'msiexec'];
+const SYSTEM = ['reg', 'regedit', 'setx', 'schtasks', 'at', 'crontab', 'sc', 'shutdown', 'taskkill', 'kill', 'pkill', 'killall', 'net', 'netsh', 'icacls', 'cacls', 'takeown', 'attrib', 'format', 'diskpart', 'bcdedit', 'wmic', 'runas', 'sudo', 'su', 'systemctl', 'launchctl', 'service', 'mount', 'rundll32', 'mshta', 'regsvr32', 'cscript', 'wscript', 'shred'];
+// These hide what they run, or change what later commands mean, so the office cannot check them.
+const WRAPPERS = ['cmd', 'powershell', 'pwsh', 'wsl', 'eval', 'exec', 'xargs', 'env', 'nohup', 'watch', 'parallel', 'timeout', 'nice', 'time', 'command', 'builtin', 'coproc', 'alias', 'unalias', 'function', 'export', 'declare', 'typeset', 'readonly', 'trap', 'enable', 'popd', 'winpty', 'ssh-agent', 'conhost', 'vim', 'vi', 'nvim', 'emacs', 'nano', 'less', 'more', 'script'];
+const HELD_NAMES = new Set([...SEND_OUT, ...INSTALLERS, ...SYSTEM, ...WRAPPERS]);
+const KEYWORDS = new Set(['do', 'then', 'else', 'elif', 'if', 'while', 'until', '!', '{', '}']);
+// Package tools run on their own only for these; anything else they do may install, publish or open a website.
+const PKG_OK = {
+  npm: /^(run|run-script|rum|urn|test|tst|t|start|stop|restart|build|ls|list|la|ll|view|v|info|show|outdated|why|explain|help|version|pack|prefix|root|bin|query|fund|doctor|audit)$/,
+  pip: /^(list|show|freeze|check|help|inspect|debug|hash)$/,
+  docker: /^(ps|images|info|version|inspect|logs|run|build|compose|exec|stop|start|rm|rmi|pull|tag|stats|top|port|diff|history|events|container|image|network|volume|system|context)$/,
+};
+const SUBS = {
+  poetry: /^(add|install|remove|update|publish|self|lock|sync)$/, conda: /^(install|create|remove|update)$/, mamba: /^(install|create|remove|update)$/,
+  gem: /^(install|uninstall|push|update)$/, cargo: /^(install|uninstall|publish|login|yank|owner)$/, go: /^(install|get)$/, dotnet: /^(tool|workload|nuget|add)$/,
+  uv: /^(add|remove|sync|tool|self|publish|pip|lock)$/, rustup: /^(install|update|toolchain|target|component|self)$/,
+};
 
-function ghAllowed(t, ctx) {
-  const [, a, b] = t; const rest = t.slice(2);
-  if (flagIn(rest, '-w', '--web', '--hostname')) return false;
-  for (let n = 0; n < rest.length; n++) {
-    const x = rest[n];
-    if (x === '-R' || x === '--repo') { if (rest[n + 1] !== ctx.repoName) return false; }
-    else if (x.startsWith('--repo=')) { if (x.slice(7) !== ctx.repoName) return false; }
-    else if (/^-R./.test(x)) return false;
+function heldByName(name, args) {
+  if (HELD_NAMES.has(name)) return true;
+  const words = args.filter(a => !a.startsWith('-')), w0 = words[0] || '', low = args.map(a => a.toLowerCase());
+  if (/^(npm|pnpm|yarn|bun)$/.test(name)) {
+    if (low.includes('-g') || longIn(args, '--global') || low.includes('global')) return true;
+    if (w0 === 'audit') return low.includes('fix') || longIn(args, '--fix');
+    if (name === 'npm') return !PKG_OK.npm.test(w0);
+    // yarn, pnpm and bun also run a project script by its bare name, so only their install and publish words are held.
+    if (!words.length) return name === 'yarn';
+    return /^(a|add|i|in|install|ci|remove|rm|un|uninstall|update|up|upgrade|dlx|x|exec|publish|link|unlink|create|init|npm|fetch|import|patch|patch-commit|deploy|pm|self-update|set|config|dedupe|prune|rebuild|setup|env|store|server|docs|home|repo|bugs)$/.test(w0);
   }
-  if (a === 'auth' && b === 'status') return !flagIn(rest, '-t', '--show-token');
-  if (a === 'label' && b === 'list') return true;
-  if (a === 'project' && (b === 'list' || b === 'view' || b === 'field-list' || b === 'item-list')) return true;
-  if ((a === 'issue' || a === 'pr') && (b === 'list' || b === 'view')) return true;
-  if (a === 'pr' && b === 'diff') return true;
-  if (a === 'repo' && b === 'list') return true;
-  if (a === 'repo' && b === 'view') return !t[3] || t[3].startsWith('-') || t[3] === ctx.repoName;
-  if (a === 'api' && b) return !rest.some(x => /^-[XfF]/.test(x) || /^--(method|field|raw-field|input)\b/.test(x));
+  // python -m runs a tool by name; the tool decides.
+  const m = args.indexOf('-m'), mod = m >= 0 ? (args[m + 1] || '') : '';
+  if (/^(py|python\d*(\.\d+)?)$/.test(name) && mod) { if (mod === 'pip') return !PKG_OK.pip.test(args[m + 2] || ''); if (HELD_NAMES.has(mod) || mod === 'twine' || mod === 'ensurepip') return true; }
+  if (/^pip\d*(\.\d+)?$/.test(name)) return !PKG_OK.pip.test(w0);
+  if (name === 'docker') return !PKG_OK.docker.test(w0) || low.includes('push') || low.some(a => a === '--push' || a.startsWith('--push=') || a === 'login');
+  if (Object.hasOwn(SUBS, name)) return SUBS[name].test(w0);
+  if (name === 'rm' || name === 'unlink') return shortIn(args, /[rR]/) || longIn(args, '--recursive');
+  if (/^(del|erase|rd|rmdir)$/.test(name)) return low.includes('/s');
+  if (name === 'find') return args.some(a => /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/.test(a));
+  if (name === 'sort') return shortIn(args, /o/) || longIn(args, '--output', '--compress-program');
+  if (name === 'tail') return shortIn(args, /[fF]/) || longIn(args, '--follow');
+  if (name === 'tar') return args.some(a => /--(checkpoint-action|to-command|use-compress-program|rsh-command|info-script|new-volume-script)/.test(a) || /^-[a-zA-Z]*I/.test(a));
+  // A shell given no script reads its commands from what is piped in, which the office cannot see.
+  if (/^(bash|sh|zsh|dash|ksh)$/.test(name)) return !words.length || shortIn(args, /[cs]/);
   return false;
 }
 
-// Splits on ; && || | outside quotes. Returns null on a lone & anywhere outside quotes.
+// Git commands that only read, so the paths they name may be anywhere the session may read.
+const GIT_READS = new Set(['status', 'diff', 'log', 'show', 'blame', 'ls-tree', 'ls-files', 'rev-parse', 'rev-list', 'merge-base', 'cat-file', 'count-objects', 'grep', 'shortlog', 'describe', 'reflog', 'for-each-ref', 'show-ref', 'name-rev', 'whatchanged', 'ls-remote', 'remote', 'branch', 'tag', 'config', 'check-ignore', 'check-attr', 'var', 'help', 'version', 'hash-object', 'diff-tree', 'diff-files', 'diff-index', 'range-diff', 'cherry', 'verify-commit', 'verify-tag', 'fsck']);
+function gitSub(t) { let i = 1; while (t[i] === '-C') i += 2; return t[i] || ''; }
+function gitHeld(t, ctx) {
+  let i = 1, from = ctx.cwd;
+  while (t[i] === '-C') { if (!t[i + 1] || !readInside(t[i + 1], ctx)) return true; from = resolve(from, expandPath(t[i + 1])); i += 2; }
+  const sub = t[i], rest = t.slice(i + 1);
+  if (!sub || sub.startsWith('-')) return true;
+  if (longIn(rest, '--upload-pack', '--receive-pack', '--exec', '--config-env', '--ext-diff') || rest.some(a => a.includes('ext::'))) return true;
+  const positional = rest.filter(a => !a.startsWith('-'));
+  switch (sub) {
+    case 'push': case 'send-pack': case 'http-push': case 'send-email': case 'imap-send': case 'request-pull': case 'svn': case 'p4': case 'cvsexportcommit':
+    case 'web--browse': case 'instaweb': case 'daemon': case 'maintenance': case 'filter-branch': case 'filter-repo': case 'replace': case 'prune': case 'update-ref': case 'symbolic-ref':
+      return true;
+    case 'branch': return longIn(rest, '--delete', '--force', '--move', '--copy') || shortIn(rest, /[dDfMC]/);
+    case 'tag': return longIn(rest, '--delete', '--force') || shortIn(rest, /[df]/);
+    case 'reset': return longIn(rest, '--hard', '--merge', '--keep');
+    case 'clean': return !(longIn(rest, '--dry-run') || shortIn(rest, /n/));
+    case 'checkout': return longIn(rest, '--force', '--ours', '--theirs', '--orphan', '--patch', '--merge', '--overwrite-ignore') || shortIn(rest, /[fBpm]/) || rest.includes('--') || rest.includes('.') || positional.some(a => existsSync(resolve(from, a)));
+    case 'restore': return !(longIn(rest, '--staged') || shortIn(rest, /S/)) || longIn(rest, '--worktree') || shortIn(rest, /W/);
+    case 'switch': return longIn(rest, '--force', '--discard-changes', '--force-create') || shortIn(rest, /[fC]/);
+    case 'rm': return longIn(rest, '--force') || shortIn(rest, /f/);
+    case 'read-tree': return shortIn(rest, /u/) || longIn(rest, '--reset');
+    case 'rebase': return longIn(rest, '--exec') || shortIn(rest, /x/);
+    case 'submodule': return positional[0] === 'foreach';
+    case 'bisect': return positional[0] === 'run';
+    case 'stash': return /^(drop|clear)$/.test(rest[0] || '');
+    case 'worktree': return /^(remove|prune)$/.test(rest[0] || '') && (longIn(rest, '--force') || shortIn(rest, /f/));
+    case 'reflog': return /^(expire|delete)$/.test(rest[0] || '');
+    case 'gc': return longIn(rest, '--prune');
+    // Setting a value can plant a command that a later git step runs, so only reading the settings runs on its own.
+    case 'config':
+      if (longIn(rest, '--unset', '--unset-all', '--add', '--replace-all', '--edit', '--rename-section', '--remove-section') || shortIn(rest, /e/)) return true;
+      if (/^(get|list)$/.test(positional[0] || '') || longIn(rest, '--get', '--get-all', '--get-regexp', '--list') || shortIn(rest, /l/)) return false;
+      return positional.length !== 1 || positional[0] === 'set';
+    // Git accepts shortened options for grep, and its pager option runs a program.
+    case 'grep': return shortIn(rest, /O/) || rest.some(a => a.startsWith('--op'));
+    default: return false;
+  }
+}
+
+function ghHeld(t, ctx) {
+  const [, a, b] = t, rest = t.slice(2);
+  if (longIn(rest, '--web') || shortIn(rest, /w/)) return true;
+  // Another project in the office is its own business, even on GitHub.
+  if (rest.some(x => (ctx.otherRepos || []).some(o => x.toLowerCase() === o || x.toLowerCase() === '--repo=' + o || x.toLowerCase().includes('repos/' + o)))) return true;
+  if (a === 'auth') return !(b === 'status' && !longIn(rest, '--show-token') && !shortIn(rest, /t/));
+  if (a === 'api') return !b || shortIn(rest, /[XfF]/) || longIn(rest, '--method', '--field', '--raw-field', '--input');
+  if (['browse', 'extension', 'ext', 'alias', 'codespace', 'cs', 'secret', 'variable', 'ssh-key', 'gpg-key'].includes(a)) return true;
+  if (a === 'config') return b !== 'get' && b !== 'list';
+  if (a === 'search' || a === 'status' || a === '--version') return false;
+  return !['list', 'view', 'diff', 'status', 'checks', 'field-list', 'item-list'].includes(b);
+}
+
+// Splits on ; && || | and new lines outside quotes. Returns null on a lone & anywhere outside quotes.
 function splitCommands(cmd) {
   const out = []; let cur = '', quote = null;
   for (let i = 0; i < cmd.length; i++) {
     const ch = cmd[i], two = cmd.slice(i, i + 2);
     if (quote) { if (ch === quote) quote = null; cur += ch; continue; }
     if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue; }
+    if (ch === '\\') { cur += ch + (cmd[i + 1] || ''); i++; continue; }
     if (two === '&&' || two === '||') { out.push(cur); cur = ''; i++; continue; }
+    if (ch === '&' && (cmd[i - 1] === '>' || cmd[i + 1] === '>')) { cur += ch; continue; }
     if (ch === '&') return null;
-    if (ch === ';' || ch === '|') { out.push(cur); cur = ''; continue; }
+    if (ch === ';' || ch === '|' || ch === '\n') { out.push(cur); cur = ''; continue; }
     cur += ch;
   }
   if (quote) return null;
   out.push(cur);
   return out.map(s => s.trim());
+}
+
+// Takes out heredoc bodies, which are data for their command, and comments, and joins lines ended by a backslash. Null when a heredoc never ends.
+function dropHeredocs(cmd) {
+  let out = '', quote = null;
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
+    if (quote) {
+      // Inside double quotes the shell drops a backslash before a new line.
+      if (quote === '"' && ch === '\\') { if (cmd[i + 1] !== '\n') out += ch + (cmd[i + 1] || ''); i++; continue; }
+      if (ch === quote) quote = null;
+      out += ch; continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; out += ch; continue; }
+    if (ch === '\\') { if (cmd[i + 1] === '\n') out += ' '; else out += ch + (cmd[i + 1] || ''); i++; continue; }
+    if (ch === '#' && (!out || /[\s;&|]$/.test(out))) { const nl = cmd.indexOf('\n', i); if (nl < 0) break; i = nl - 1; continue; }
+    if (ch === '<' && cmd[i + 1] === '<' && cmd[i + 2] !== '<') {
+      const m = /^<<(-?)[ \t]*(['"]?)([A-Za-z_][\w-]*)\2/.exec(cmd.slice(i));
+      const nl = cmd.indexOf('\n', i);
+      if (!m || nl < 0) return null;
+      const lines = cmd.slice(nl + 1).split('\n'); let k = 0;
+      while (k < lines.length && (m[1] ? lines[k].replace(/^\t+/, '') : lines[k]) !== m[3]) k++;
+      if (k === lines.length) return null;
+      const after = dropHeredocs(cmd.slice(i + m[0].length, nl) + '\n' + lines.slice(k + 1).join('\n'));
+      return after == null ? null : out + after;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+// A file name the shell may match against a hidden folder such as .git, which only a pattern starting with a dot can do.
+function dotPattern(v) { return String(v).split(/[\\/]+/).some(s => s.startsWith('.') && /[?*[]/.test(s)); }
+
+// Checks each redirection's file and takes it out of the command. Null when one names a file the session may not use.
+function takeRedirects(seg, ctx) {
+  let out = '', quote = null;
+  for (let i = 0; i < seg.length; i++) {
+    const ch = seg[i];
+    if (quote) { if (ch === quote) quote = null; out += ch; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; out += ch; continue; }
+    if (ch === '\\') { out += ch + (seg[i + 1] || ''); i++; continue; }
+    if (ch !== '>' && ch !== '<') { out += ch; continue; }
+    const write = ch === '>';
+    out = out.replace(/(^|\s)(\d+|&)$/, '$1');
+    let j = i + 1;
+    if (seg[j] === ch) { if (!write) return null; j++; } else if (seg[j] === '|' || seg[j] === '>' || seg[j] === '<') j++;
+    if (seg[j] === '&') {
+      // >&2 copies a stream; >&word with anything else writes to a file named word.
+      let k = j + 1; while (/[\d-]/.test(seg[k] || '')) k++;
+      if (k > j + 1 && (k === seg.length || /[\s;|<>]/.test(seg[k]))) { i = k - 1; out += ' '; continue; }
+      j++;
+    }
+    while (seg[j] === ' ' || seg[j] === '\t') j++;
+    let target = '', q = null;
+    for (; j < seg.length; j++) { const c = seg[j]; if (q) { if (c === q) q = null; else target += c; continue; } if (c === '"' || c === "'") { q = c; continue; } if (/[\s<>]/.test(c)) break; target += c; }
+    if (!target || target.startsWith('(') || target.includes('$') || /^~[^\\/]/.test(target) || dotPattern(target)) return null;
+    if (!/^(\/dev\/null|nul)$/i.test(target) && !(write ? writeAllowed(expandPath(target), ctx) : readInside(target, ctx))) return null;
+    out += ' '; i = j - 1;
+  }
+  return out;
 }
 
 function expandPath(p) {
@@ -193,81 +305,80 @@ function readInside(p, ctx) {
 }
 
 // Keeps routine bookkeeping checkable. Pass the same guidance in every brief to subagents.
-const SESSION_GUIDE = 'This session runs under a strict command check, and the person approving anything it holds is not a programmer. Create and change files with the Write and Edit tools, including job files under ~/.sdlc, not with shell commands. Read files with the Read tool. Create folders with plain mkdir commands using literal paths. Do not use shell variables, redirections, printf or heredocs. Read-only Git and file commands, alone or joined by pipes, run without asking, so look at things that way. The inbox threshold in the plugin still applies: a question below it you decide yourself and log, as the plugin says. Ask the human any question at or above it in plain words in your reply and wait for the answer; do not use the AskUserQuestion tool, because the office cannot show it. Speak to the person directly in the first person, as one colleague to another: say I and you, in every reply, question and inbox entry, never "the human" or "the user". They know who you are, so never introduce yourself. Ask only one question at a time, even when the plugin says to ask several together: ask the most important, wait for the answer, then ask the next. If an answer does not say which question it is for, it answers your first open question. When you want the person to look at a file, such as a screenshot or a design option, give its full path; the office turns it into a link they can open. Give every Bash command a description saying in plain words what it does and why; it appears on the approval card. The person works only inside the office game, so never ask them to run a terminal or slash command: if GitHub is signed out, tell them to use the GitHub sign-in button in the office, and to answer you when they have signed in. Include these instructions in every brief you give a subagent. This changes how you run commands only: every approval rule still applies, and approvals still come only from the human in this conversation.';
+const SESSION_GUIDE = 'This session works on its own: almost every step runs without asking. A step waits for the person\'s click when it sends anything out (pushing, pull requests, publishing, opening a website), changes or deletes anything outside this project and its work folders, deletes what is hard to get back (branches, history, uncommitted work), installs software, or edits the project\'s own safety checks. The person approving is not a programmer. Write commands plainly, with literal paths and without $( ) or backticks, so the office can check them; a command it cannot check waits for a click. The inbox threshold in the plugin still applies: a question below it you decide yourself and log, as the plugin says. Ask the human any question at or above it in plain words in your reply and wait for the answer; do not use the AskUserQuestion tool, because the office cannot show it. Speak to the person directly in the first person, as one colleague to another: say I and you, in every reply, question and inbox entry, never "the human" or "the user". They know who you are, so never introduce yourself. Ask only one question at a time, even when the plugin says to ask several together: ask the most important, wait for the answer, then ask the next. If an answer does not say which question it is for, it answers your first open question. When you want the person to look at a file, such as a screenshot or a design option, give its full path; the office turns it into a link they can open. Give every Bash command a description saying in plain words what it does and why; it appears on the approval card. The person works only inside the office game, so never ask them to run a terminal or slash command: if GitHub is signed out, tell them to use the GitHub sign-in button in the office, and to answer you when they have signed in. Include these instructions in every brief you give a subagent. This changes how you run commands only: every approval rule still applies, and approvals still come only from the human in this conversation.';
 
-const READ_COMMANDS = new Set(['cat', 'head', 'tail', 'ls', 'wc', 'grep', 'sort', 'cut', 'pwd', 'stat', 'du', 'file', 'basename', 'dirname', 'echo', 'find']);
-function readCommandAllowed(t, ctx) {
-  const [name, ...args] = t;
-  if (!READ_COMMANDS.has(name)) return false;
-  if (name === 'find' && args.some(a => /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/.test(a))) return false;
-  if (name === 'sort' && args.some(a => /^-[a-zA-Z]*o/.test(a) || a.startsWith('--output') || a.startsWith('--compress-program'))) return false;
-  if (name === 'tail' && args.some(a => /^-[a-zA-Z]*[fF]/.test(a) || a.startsWith('--follow'))) return false;
-  return readableArgs(args, ctx);
+// These only read, so a path they name may be anywhere the session may read. Anything else may write where it names.
+const READ_COMMANDS = new Set(['cat', 'head', 'tail', 'ls', 'wc', 'grep', 'sort', 'cut', 'pwd', 'stat', 'du', 'file', 'basename', 'dirname', 'echo', 'find', 'findstr', 'where', 'which', 'tasklist', 'whoami', 'type', 'dir', 'tree', 'diff', 'cmp', 'tr', 'jq', 'realpath', 'readlink', 'date', 'hostname', 'printenv', 'md5sum', 'sha1sum', 'sha256sum', 'nl', 'column', 'od', 'xxd', 'strings']);
+const COPIERS = new Set(['cp', 'copy', 'xcopy', 'robocopy']);
+// Windows commands whose options start with a slash.
+const SWITCH_COMMANDS = new Set(['tasklist', 'findstr', 'where', 'whoami', 'systeminfo', 'ipconfig', 'netstat', 'dir', 'tree', 'type', 'del', 'erase', 'rd', 'rmdir', 'copy', 'xcopy', 'robocopy', 'move', 'md']);
+const URL_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
+// The path an argument names, or null when it names none.
+function argPath(a, switches) {
+  if (switches && /^\/[a-zA-Z?]+(:\S*)?$/.test(a)) return null;
+  let v = a;
+  if (a.startsWith('-')) { const eq = a.indexOf('='); v = eq >= 0 ? a.slice(eq + 1) : a.startsWith('--') ? '' : a.slice(2); }
+  else if (/^[A-Za-z_][\w.-]*=/.test(a)) v = a.slice(a.indexOf('=') + 1);
+  if (!v || (URL_RE.test(v) && !/^file:/i.test(v))) return null;
+  if (/^\.(git|claude)([\\/]|$)/i.test(v) || dotPattern(v)) return v;
+  // Words such as a commit message ("fix: a/b") or HEAD:src/a name no file.
+  if (/^[^:\\/]{2,}:/.test(v)) return null;
+  return /[\\/~$]|^[a-zA-Z]:/.test(v) || v === '..' ? v : null;
 }
-// Anything that could be a path has to be somewhere the session may read.
-function readableArgs(args, ctx) {
-  return args.every(a => {
-    if (!/[\\/~]|^[a-zA-Z]:/.test(a) && a !== '..') return true;
-    return !a.startsWith('-') && readInside(a, ctx);
-  });
-}
-
-function isToolCheck(t) {
-  const s = t.join(' ');
-  if (t.length === 4 && s.startsWith('docker info --format ')) return true;
-  return s === 'gh --version' || s === 'git --version' || s === 'docker --version' || s === 'docker info' || s === 'git config user.name' || s === 'git config user.email';
-}
-
-// The owner's decision: a project's own test and build commands run without asking, only inside that project's folder.
-// This runs the project's own code. Installing, npx, and any path outside the project are still held.
-function testCommandAllowed(t, ctx) {
-  const inProject = { ...ctx, roots: ctx.projectRoots || [] };
-  if (!inProject.roots.length || !insideRoots(ctx.cwd, inProject)) return false;
-  const pathsInside = args => args.every(a => (!/[\\/~]/.test(a) && !a.includes('..')) || (!a.startsWith('-') && insideRoots(expandPath(a), inProject)));
-  const [name, ...args] = t;
-  if (name === 'make') return args.length === 1 && /^(test|build|check|lint)$/.test(args[0]);
-  if (name === 'npm' || name === 'pnpm' || name === 'yarn') {
-    const script = /^(test|build|lint|typecheck|check)(:[\w:-]+)?$/;
-    const after = args[0] === 'run' ? args.slice(1) : args;
-    if (!after.length || !script.test(after[0]) || (args[0] !== 'run' && !/^(test|build)$/.test(after[0]) )) return false;
-    const rest = after.slice(1);
-    if (rest.length && rest[0] !== '--') return false;
-    return pathsInside(rest);
+// Running a script is accepted, so the files named to these are taken as read.
+const INTERPRETERS = /^(py|python\d*(\.\d+)?|node|deno|bun|ruby|php|pytest)$/;
+function pathsOk(name, args, ctx, t) {
+  const reads = READ_COMMANDS.has(name) || INTERPRETERS.test(name) || (name === 'git' && GIT_READS.has(gitSub(t)));
+  // Anything that may change files has to start inside the project, or a bare file name would land somewhere else.
+  if (!reads && !insideRoots(ctx.cwd, ctx)) return false;
+  const copies = COPIERS.has(name), sw = SWITCH_COMMANDS.has(name);
+  const plain = args.filter(a => !a.startsWith('-') && !(sw && /^\//.test(a)));
+  let target = false;
+  for (let n = 0; n < args.length; n++) {
+    const a = args[n];
+    // A script word such as sed's '1w .git/hooks/x' can write to a file it names after a space.
+    if (!reads && /\s/.test(a) && /(^|\s)\S*\.(git|claude)([\\/]|\s|$)/i.test(a)) return false;
+    if (copies && (a === '-t' || (a.startsWith('--t') && !a.includes('=')))) { target = true; continue; }
+    const into = target || (copies && (/^-t./.test(a) || a.startsWith('--t') || (n === args.lastIndexOf(a) && a === plain[plain.length - 1])));
+    target = false;
+    const v = argPath(a, sw);
+    if (v == null) continue;
+    if (/^~[^\\/]/.test(v)) return false;
+    if (v.includes('$')) { if (reads) continue; return false; }
+    if ((reads || (copies && !into)) && !dotPattern(v)) { if (!readInside(v, ctx)) return false; continue; }
+    if (dotPattern(v) || !writeAllowed(expandPath(v), ctx)) return false;
   }
-  if (name === 'pytest') return pathsInside(args);
-  if ((name === 'python' || name === 'python3' || name === 'py') && args[0] === '-m' && args[1] === 'pytest') return pathsInside(args.slice(2));
-  const SUB = { cargo: /^(test|build|check)$/, go: /^(test|build|vet)$/, dotnet: /^(test|build)$/ };
-  if (Object.hasOwn(SUB, name)) return !!args.length && SUB[name].test(args[0]) && pathsInside(args.slice(1));
-  return false;
+  return true;
 }
 
 export function commandAllowed(cmd, ctx) {
   if (typeof cmd !== 'string' || !cmd.trim()) return false;
-  cmd = cmd.replace(/(^|\s)2>(&1|\s*\/dev\/null|\s*nul)(?=\s|$|;|\|)/gi, '$1');
-  if (RAW_BAN.some(c => cmd.includes(c))) return false;
+  cmd = cmd.replace(/\r/g, '');
+  if (cmd.includes('`') || cmd.includes('$(')) return false;
   // A quote behind a backslash makes the shell and the split below disagree about where a command ends, which could hide a second command.
   if (/\\["']/.test(cmd)) return false;
-  if (/[<>]/.test(cmd.replace(/"[^"]*"|'[^']*'/g, ''))) return false;
-  const segments = splitCommands(cmd.trim());
-  if (!segments || !segments.length) return false;
+  cmd = dropHeredocs(cmd);
+  const segments = cmd == null ? null : splitCommands(cmd.trim());
+  if (!segments) return false;
   let here = ctx;
-  for (const seg of segments) {
-    const t = tokenize(seg);
-    if (!t || !t.length) return false;
-    if (t[0] === 'cd') {
-      if (t.length !== 2 || !readInside(t[1], here)) return false;
-      here = { ...here, cwd: resolve(here.cwd, expandPath(t[1])) };
-    } else if (t[0] === 'printenv') {
-      if (t.length < 2 || !t.slice(1).every(a => /^CLAUDE_CODE_MAX_[A-Z_]+$/.test(a))) return false;
-    } else if (t[0] === 'mkdir') {
-      const paths = t.slice(1).filter(a => a !== '-p');
-      if (!paths.length || !paths.every(a => !a.startsWith('-') && writeAllowed(expandPath(a), here))) return false;
-    } else if (isToolCheck(t)) {
-      // Only asks what is installed or who git is set up as.
-    } else if (t[0] === 'git' || t[0] === 'gh') {
-      if (!insideRoots(here.cwd, here)) return false;
-      if (!(t[0] === 'git' ? gitAllowed(t, here) : ghAllowed(t, here))) return false;
-    } else if (!readCommandAllowed(t, here) && !testCommandAllowed(t, here)) return false;
+  for (const raw of segments) {
+    if (!raw) continue;
+    const seg = takeRedirects(raw, here);
+    let t = seg == null ? null : tokenize(seg);
+    if (!t) return false;
+    while (t.length && KEYWORDS.has(t[0])) t = t.slice(1);
+    if (!t.length) continue;
+    if (/[$=]/.test(t[0]) || /^~[^\\/]/.test(t[0])) return false;
+    const name = basename(t[0].replace(/\\/g, '/')).toLowerCase().replace(/\.(exe|cmd|bat|com|ps1)$/, ''), args = t.slice(1);
+    if (name === 'cd' || name === 'pushd') {
+      if (args.length !== 1 || args[0] === '-' || args[0].includes('$') || !readInside(args[0], here)) return false;
+      here = { ...here, cwd: resolve(here.cwd, expandPath(args[0])) };
+      continue;
+    }
+    if (heldByName(name, args)) return false;
+    if (name === 'git' && gitHeld(t, here)) return false;
+    if (name === 'gh' && ghHeld(t, here)) return false;
+    if (!pathsOk(name, args, here, t)) return false;
   }
   return true;
 }
@@ -290,7 +401,7 @@ export function sessionContext(p, all, worktreesOf, home = homedir()) {
     }
   }
   const mat = materialsOf(p, home), conn = p.connected || [];
-  return { cwd: p.dir, repoName: p.name, roots: [p.dir, join(home, '.sdlc'), ...worktreesOf(p)], projectRoots: [p.dir, ...worktreesOf(p)], exclude: [...exclude, join(mat, 'removed')], readRoots: [mat, ...conn], noWrite: [mat, ...conn, join(home, '.sdlc', 'config.md'), join(home, '.sdlc', 'settings.json')] };
+  return { cwd: p.dir, repoName: p.name, otherRepos: all.filter(q => q !== p && q.name !== p.name).map(q => String(q.name).toLowerCase()), roots: [p.dir, join(home, '.sdlc'), ...worktreesOf(p)], projectRoots: [p.dir, ...worktreesOf(p)], exclude: [...exclude, join(mat, 'removed')], readRoots: [mat, ...conn], noWrite: [mat, ...conn, join(home, '.sdlc', 'config.md'), join(home, '.sdlc', 'settings.json')] };
 }
 
 /* ================= Projects ================= */
@@ -350,8 +461,10 @@ export function classify(tool, input, ctx) {
   if (String(tool).startsWith('mcp__local-browser__')) return localBrowserAllowed(tool.slice(20), input, ctx);
   if (String(tool).startsWith('mcp__web-browser__')) return WEB_LOOK_TOOLS.has(tool.slice(18)) && browserFilesAllowed(input, ctx);
   if (tool === 'Read' || tool === 'Glob' || tool === 'Grep') return readAllowed(tool, input, ctx);
-  if (tool === 'Write' || tool === 'Edit') return writeAllowed(input.file_path, ctx);
-  if (tool === 'Bash' || tool === 'PowerShell') return commandAllowed(input.command, ctx);
+  if (tool === 'Write' || tool === 'Edit' || tool === 'MultiEdit') return writeAllowed(input.file_path, ctx);
+  if (tool === 'NotebookEdit') return writeAllowed(input.notebook_path, ctx);
+  // PowerShell is turned off for sessions, and the office cannot check it, so it always asks.
+  if (tool === 'Bash') return commandAllowed(input.command, ctx);
   return false;
 }
 
@@ -1009,11 +1122,12 @@ function main() {
     const hits = [...holds.values()].filter(h => h.session.project === p && h.requestId === requestId && (role == null || h.role === role));
     return hits.length === 1 ? hits[0] : null;
   }
-  function decide(h, approve) {
+  // A typed answer on an approval card denies the step and passes the person's words on instead.
+  function decide(h, approve, note) {
     holds.delete(h.id);
     log(h.session, approve ? 'APPROVED' : 'DENIED', h.tool, h.input);
-    addLog(h.session, approve ? 'allowed' : 'held', (approve ? 'You approved: ' : 'You denied: ') + clip(h.command, 300));
-    respond(h.session, h.requestId, approve ? { behavior: 'allow', updatedInput: h.input } : { behavior: 'deny', message: 'The person running the office denied this. Do not retry it. Say what you were trying to do and carry on without it.' });
+    addLog(h.session, approve ? 'allowed' : 'held', (approve ? 'You approved: ' : 'You denied: ') + clip(h.command, 300) + (note ? ' and said: ' + clip(note, 300) : ''));
+    respond(h.session, h.requestId, approve ? { behavior: 'allow', updatedInput: h.input } : { behavior: 'deny', message: note ? 'The person running the office did not run this step, and said instead: ' + note + '\nDo what they say. Do not retry the step unless they asked for it.' : 'The person running the office denied this. Do not retry it. Say what you were trying to do and carry on without it.' });
     h.session.status = 'working';
     schedule(h.session);
     changed();
@@ -1778,7 +1892,7 @@ function main() {
       const p = projectFor(b, res); if (!p) return;
       const h = findHold(p, b.requestId, b.role);
       if (!h) return refuse(res, 'That request is no longer waiting.');
-      decide(h, b.decision === 'approve');
+      decide(h, b.decision === 'approve', b.decision === 'deny' ? String(b.note || '').trim().slice(0, 4000) : '');
       sendJson(res, 200, { ok: true });
     },
     '/file-answer': (b, res) => {
@@ -1903,6 +2017,8 @@ function main() {
       if (!s || s.alive || !s.paused) return refuse(res, 'That work is no longer paused.');
       const live = sessionFor(p, b.role, '', res); if (!live) return;
       sendUser(live, '/sdlc:resume');
+      const text = String(b.text || '').trim();
+      if (text) sendUser(live, text);
       sendJson(res, 200, { ok: true });
     },
     '/continue-all': (b, res) => {

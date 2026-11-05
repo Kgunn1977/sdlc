@@ -39,7 +39,7 @@ function walkTo(k){
 const keys = new Set(); const padDir = { d: null };
 const KEYDIR = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right' };
 function heldDir(){ if (padDir.d) return padDir.d; const arr = Array.from(keys); for (let i = arr.length - 1; i >= 0; i--) if (KEYDIR[arr[i]]) return KEYDIR[arr[i]]; return null; }
-function uiBusy(){ return dlgOpen() || mapOpen || carrying; }
+function uiBusy(){ return dlgOpen() || mapOpen || complexOpen || carrying; }
 function typingInField(ev){ const t = ev.target; return t && ((t.tagName === 'INPUT' && !t.readOnly) || t.tagName === 'TEXTAREA'); }
 let titleBlock = true;
 window.addEventListener('keydown', ev => {
@@ -47,6 +47,7 @@ window.addEventListener('keydown', ev => {
   if (typingInField(ev)) { if (ev.key === 'Escape') { ev.target.blur(); } return; }
   const k = ev.key;
   if (mapOpen) { if (k === 'Escape' || k === 'm' || k === 'M') { ev.preventDefault(); closeMap(); } return; }
+  if (complexOpen) { if (k === 'Escape' || k === 'c' || k === 'C') { ev.preventDefault(); closeComplex(); } return; }
   if (dlgOpen()) {
     if (typing) { if (k === 'Escape') { ev.preventDefault(); closeDialog(); } else if (k === ' ' || k === 'Enter' || k === 'e' || k === 'E') { ev.preventDefault(); finishTyping(); } return; }
     if (k === 'Escape' || k === 'x' || k === 'X') { ev.preventDefault(); closeDialog(); return; }
@@ -57,6 +58,7 @@ window.addEventListener('keydown', ev => {
   if (KEYDIR[k]) { ev.preventDefault(); keys.add(k); P.path = []; autoCb = null; return; }
   if (k === 'e' || k === 'E' || k === ' ' || k === 'Enter') { ev.preventDefault(); interact(); return; }
   if (k === 'm' || k === 'M') { ev.preventDefault(); openMap(); return; }
+  if (k === 'c' || k === 'C') { ev.preventDefault(); openComplex(); return; }
 });
 window.addEventListener('keyup', ev => { keys.delete(ev.key); if (ev.key.length === 1) { keys.delete(ev.key.toLowerCase()); keys.delete(ev.key.toUpperCase()); } });
 window.addEventListener('blur', () => keys.clear());
