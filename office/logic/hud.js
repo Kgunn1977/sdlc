@@ -16,7 +16,7 @@ function refreshHud(){
   document.getElementById('hud-status').textContent = s.job.status !== 'active' && s.job.status !== 'none' ? 'Job ' + s.job.status : '';
 }
 document.getElementById('hud-th').addEventListener('click', dialCard);
-document.getElementById('hud-others').addEventListener('click', openComplex);
+document.getElementById('hud-others').addEventListener('click', () => openComplex());
 document.getElementById('hud-gh').addEventListener('click', githubCard);
 document.getElementById('b-next').addEventListener('click', callNext);
 document.getElementById('b-map').addEventListener('click', openMap);
